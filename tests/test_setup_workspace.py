@@ -121,6 +121,61 @@ class TestResolveConfigTemplate:
         assert result["channels"]["telegram"]["allowFrom"] == ["55"]
 
 
+class TestResolveOptionalTimezone:
+    """Verify NANOBOT_TIMEZONE optional env var resolution."""
+
+    def test_resolves_timezone_with_default(self, tmp_path: Path) -> None:
+        template = tmp_path / "config.json.template"
+        template.write_text(
+            json.dumps(
+                {
+                    "agents": {"defaults": {"timezone": "${NANOBOT_TIMEZONE}"}},
+                    "providers": {"openrouter": {"apiKey": "${OPENROUTER_API_KEY}"}},
+                    "channels": {
+                        "telegram": {
+                            "token": "${TELEGRAM_BOT_TOKEN}",
+                            "allowFrom": ["${TELEGRAM_USER_ID}"],
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        env = {
+            "OPENROUTER_API_KEY": "sk-test",
+            "TELEGRAM_BOT_TOKEN": "999:XYZ",
+            "TELEGRAM_USER_ID": "55",
+        }
+        result = resolve_config_template(template, env)
+        assert result["agents"]["defaults"]["timezone"] == "America/New_York"
+
+    def test_resolves_timezone_with_override(self, tmp_path: Path) -> None:
+        template = tmp_path / "config.json.template"
+        template.write_text(
+            json.dumps(
+                {
+                    "agents": {"defaults": {"timezone": "${NANOBOT_TIMEZONE}"}},
+                    "providers": {"openrouter": {"apiKey": "${OPENROUTER_API_KEY}"}},
+                    "channels": {
+                        "telegram": {
+                            "token": "${TELEGRAM_BOT_TOKEN}",
+                            "allowFrom": ["${TELEGRAM_USER_ID}"],
+                        }
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+        env = {
+            "OPENROUTER_API_KEY": "sk-test",
+            "TELEGRAM_BOT_TOKEN": "999:XYZ",
+            "TELEGRAM_USER_ID": "55",
+            "NANOBOT_TIMEZONE": "Europe/London",
+        }
+        result = resolve_config_template(template, env)
+        assert result["agents"]["defaults"]["timezone"] == "Europe/London"
+
+
 class TestCopyWorkspaceFiles:
     def test_copies_all_template_files(self, tmp_workspace_target: Path) -> None:
         copied = copy_workspace_files(tmp_workspace_target)
@@ -137,6 +192,21 @@ class TestCopyWorkspaceFiles:
         assert src_soul.read_text(encoding="utf-8") == dst_soul.read_text(
             encoding="utf-8"
         )
+
+    def test_copies_nested_memory_seed(self, tmp_workspace_target: Path) -> None:
+        copied = copy_workspace_files(tmp_workspace_target)
+        assert "memory/MEMORY.md" in copied
+        dst_memory = tmp_workspace_target / "memory" / "MEMORY.md"
+        assert dst_memory.exists()
+        assert dst_memory.is_file()
+
+    def test_nested_memory_bytes_match_source(
+        self, tmp_workspace_target: Path
+    ) -> None:
+        copy_workspace_files(tmp_workspace_target)
+        src_memory = REPO_ROOT / "workspace" / "memory" / "MEMORY.md"
+        dst_memory = tmp_workspace_target / "memory" / "MEMORY.md"
+        assert src_memory.read_bytes() == dst_memory.read_bytes()
 
 
 class TestWorkspaceTemplateFiles:
@@ -194,6 +264,11 @@ class TestWorkspaceTemplateFiles:
         telegram = parsed["channels"]["telegram"]
         assert telegram["enabled"] is True
         assert "${TELEGRAM_BOT_TOKEN}" in telegram["token"]
+
+    def test_config_template_uses_pinned_model(self) -> None:
+        config = REPO_ROOT / "workspace" / "config.json.template"
+        parsed = json.loads(config.read_text(encoding="utf-8"))
+        assert parsed["agents"]["defaults"]["model"] == "x-ai/grok-4.1-fast"
 
 
 class TestNanobotInstallation:

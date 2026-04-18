@@ -27,7 +27,10 @@ WORKSPACE_SRC = REPO_ROOT / "workspace"
 NANOBOT_HOME = Path.home() / ".nanobot"
 NANOBOT_WORKSPACE = NANOBOT_HOME / "workspace"
 
-TEMPLATE_FILES = ["SOUL.md", "USER.md", "HEARTBEAT.md", "states.yaml"]
+TEMPLATE_FILES = [
+    "SOUL.md", "USER.md", "HEARTBEAT.md", "states.yaml",
+    "DASHBOARD.md", "disco_voices.yaml", "memory/MEMORY.md",
+]
 
 KOKORO_MODELS_DIR = NANOBOT_HOME / "models" / "kokoro"
 KOKORO_MODEL_BASE_URL = (
@@ -43,6 +46,10 @@ ENV_VARS = {
     "OPENROUTER_API_KEY": "OpenRouter API key",
     "TELEGRAM_BOT_TOKEN": "Telegram bot token",
     "TELEGRAM_USER_ID": "Telegram numeric user ID",
+}
+
+OPTIONAL_ENV_VARS: dict[str, tuple[str, str]] = {
+    "NANOBOT_TIMEZONE": ("IANA timezone", "America/New_York"),
 }
 
 
@@ -89,11 +96,21 @@ def resolve_config_template(
         placeholder = f"${{{var_name}}}"
         if placeholder in raw:
             raw = raw.replace(placeholder, env[var_name])
+    for var_name, (_description, default) in OPTIONAL_ENV_VARS.items():
+        placeholder = f"${{{var_name}}}"
+        if placeholder in raw:
+            raw = raw.replace(placeholder, env.get(var_name, default))
     return json.loads(raw)
 
 
 def copy_workspace_files(target_dir: Path) -> list[str]:
-    """Copy workspace template files to target directory."""
+    """Copy workspace template files to target directory.
+
+    Entries in TEMPLATE_FILES may contain forward-slash subpaths (e.g.
+    ``memory/MEMORY.md``); Path joining resolves them on all platforms,
+    and parent directories are created per-entry so nested seed files
+    land alongside flat ones.
+    """
     target_dir.mkdir(parents=True, exist_ok=True)
     copied: list[str] = []
     for filename in TEMPLATE_FILES:
@@ -103,6 +120,7 @@ def copy_workspace_files(target_dir: Path) -> list[str]:
                 f"Workspace template {filename} not found at {src}"
             )
         dst = target_dir / filename
+        dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
         copied.append(filename)
         log.info("Copied %s -> %s", filename, dst)

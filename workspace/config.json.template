@@ -9,14 +9,14 @@
   },
   "agents": {
     "defaults": {
-      "model": "anthropic/claude-3.5-haiku",
+      "model": "x-ai/grok-4.1-fast",
       "provider": "openrouter",
       "maxTokens": 4096,
       "contextWindowTokens": 65536,
       "temperature": 0.1,
-      "maxToolIterations": 50,
+      "maxToolIterations": 10,
       "workspace": "~/.nanobot/workspace",
-      "timezone": "America/New_York",
+      "timezone": "${NANOBOT_TIMEZONE}",
       "providerRetryMode": "standard",
       "dream": {
         "intervalH": 4,
@@ -27,6 +27,7 @@
     }
   },
   "channels": {
+    "sendProgress": false,
     "telegram": {
       "enabled": true,
       "token": "${TELEGRAM_BOT_TOKEN}",

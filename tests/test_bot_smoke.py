@@ -61,7 +61,7 @@ class TestConfigSchemaValidation:
         assert loaded_config.providers.ollama.api_key == "ollama"
 
     def test_agent_defaults_model(self, loaded_config: Config) -> None:
-        assert loaded_config.agents.defaults.model == "anthropic/claude-3.5-haiku"
+        assert loaded_config.agents.defaults.model == "x-ai/grok-4.1-fast"
 
     def test_agent_defaults_provider(self, loaded_config: Config) -> None:
         assert loaded_config.agents.defaults.provider == "openrouter"
@@ -79,6 +79,15 @@ class TestConfigSchemaValidation:
     def test_telegram_channel_token(self, loaded_config: Config) -> None:
         telegram = loaded_config.channels.telegram
         assert telegram["token"] == "000000:FAKEtoken"
+
+    def test_send_progress_disabled(self, loaded_config: Config) -> None:
+        assert loaded_config.channels.send_progress is False
+
+    def test_max_tool_iterations_value(self, loaded_config: Config) -> None:
+        assert loaded_config.agents.defaults.max_tool_iterations == 10
+
+    def test_timezone_configured(self, loaded_config: Config) -> None:
+        assert loaded_config.agents.defaults.timezone == "America/New_York"
 
 
 class TestProviderResolution:
