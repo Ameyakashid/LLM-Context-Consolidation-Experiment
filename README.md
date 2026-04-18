@@ -196,6 +196,47 @@ Open `http://<your-ip>:8085` on any browser. For Fire Tablet:
 
 ---
 
+## Testing
+
+The test suite lives in `tests/` and is configured by `pytest.ini` at the repo root. Pytest and its plugins are declared in `requirements-dev.txt`, separate from the runtime dependencies in `requirements.txt`.
+
+### Install dev dependencies
+
+```bash
+# Activate the virtualenv first
+source .venv/bin/activate        # macOS/Linux
+# .venv\Scripts\activate         # Windows
+
+pip install -r requirements-dev.txt
+```
+
+`requirements-dev.txt` pulls in `requirements.txt` and adds `pytest`.
+
+### Run the suite
+
+```bash
+pytest
+```
+
+This collects only from `tests/` (scoped by `pytest.ini`), so cloned reference repos under `references/` and the virtualenv are ignored. Expect ~985 tests, all passing.
+
+### If pytest is invoked from the wrong interpreter
+
+The repo's root `conftest.py` verifies that `nanobot` is importable before collection begins. If you see
+
+```
+ImportError: nanobot package not importable from <path>
+```
+
+you are running pytest from a Python that does not have `nanobot-ai` installed. Either activate `.venv`, or run pytest through the virtualenv's interpreter directly:
+
+```bash
+.venv/bin/python -m pytest         # macOS/Linux
+.venv/Scripts/python -m pytest     # Windows
+```
+
+---
+
 ## Project Structure
 
 ```
