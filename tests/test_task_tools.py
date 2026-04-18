@@ -2,6 +2,7 @@
 
 Each tool is tested via its async execute() method with a real TaskStore
 backed by a temp file. Tests cover happy paths and error paths.
+Registry-wiring tests live in test_task_tools_registry.py.
 """
 
 import asyncio
@@ -9,8 +10,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-
-from nanobot.agent.tools.registry import ToolRegistry
 
 from task_store import TaskStore
 from task_tools import (
@@ -22,7 +21,6 @@ from task_tools import (
     format_task,
     format_task_list,
     parse_iso_date,
-    register_task_tools,
 )
 
 
@@ -129,7 +127,7 @@ class TestCreateTaskTool:
         tool = CreateTaskTool(store=store)
         result = run(tool.execute(title="Bad date", priority="low", due_date="nope"))
         assert result.startswith("Error:")
-        assert "Invalid date format" in result
+        assert "could not parse time phrase" in result
         assert len(store.list_tasks()) == 0
 
     def test_tool_name(self, store: TaskStore) -> None:
@@ -268,36 +266,3 @@ class TestCompleteTaskTool:
 
     def test_tool_name(self, store: TaskStore) -> None:
         assert CompleteTaskTool(store=store).name == "complete_task"
-
-
-# ---------------------------------------------------------------------------
-# Registration tests
-# ---------------------------------------------------------------------------
-
-class TestRegisterTaskTools:
-    def test_registers_all_five_tools(self, store: TaskStore) -> None:
-        registry = ToolRegistry()
-        register_task_tools(registry, store)
-        assert len(registry) == 5
-        for name in ["create_task", "list_tasks", "get_task", "update_task", "complete_task"]:
-            assert registry.has(name), f"Missing tool: {name}"
-
-    def test_tools_produce_valid_schemas(self, store: TaskStore) -> None:
-        registry = ToolRegistry()
-        register_task_tools(registry, store)
-        definitions = registry.get_definitions()
-        assert len(definitions) == 5
-        for defn in definitions:
-            assert defn["type"] == "function"
-            func = defn["function"]
-            assert "name" in func
-            assert "description" in func
-            assert "parameters" in func
-            assert func["parameters"]["type"] == "object"
-
-    def test_execute_via_registry(self, store: TaskStore) -> None:
-        registry = ToolRegistry()
-        register_task_tools(registry, store)
-        result = run(registry.execute("create_task", {"title": "Via registry", "priority": "low"}))
-        assert "Task created:" in result
-        assert "Via registry" in result

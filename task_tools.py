@@ -10,19 +10,26 @@ in nanobot-ai v0.1.5 — registration is programmatic only.
 """
 
 import logging
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import datetime
 from typing import Literal
 
 from nanobot.agent.tools.base import Tool, tool_parameters
 from nanobot.agent.tools.registry import ToolRegistry
 from nanobot.agent.tools.schema import (
     ArraySchema,
+    ObjectSchema,
     StringSchema,
     tool_parameters_schema,
 )
 
-from task_store import Task, TaskStore, TaskUpdate
+from task_store import TaskStore, TaskUpdate
+from task_time_helpers import (
+    format_task,
+    format_task_list,
+    get_user_timezone,
+    parse_iso_date,
+    resolve_due_date,
+)
 
 log = logging.getLogger(__name__)
 
@@ -30,78 +37,34 @@ TaskStatus = Literal["pending", "in_progress", "done"]
 TaskPriority = Literal["low", "medium", "high"]
 
 
-# ---------------------------------------------------------------------------
-# Formatting helpers
-# ---------------------------------------------------------------------------
-
-def format_task(task: Task) -> str:
-    """Format a single task for LLM consumption."""
-    lines = [
-        f"[{task.id[:8]}] {task.title}",
-        f"  Status: {task.status} | Priority: {task.priority}",
-    ]
-    if task.description:
-        lines.append(f"  Description: {task.description}")
-    if task.due_date:
-        lines.append(f"  Due: {task.due_date.isoformat()}")
-    if task.tags:
-        lines.append(f"  Tags: {', '.join(task.tags)}")
-    return "\n".join(lines)
-
-
-def format_task_list(tasks: list[Task]) -> str:
-    """Format multiple tasks for LLM consumption."""
-    if not tasks:
-        return "No tasks found."
-    return "\n\n".join(format_task(t) for t in tasks)
-
-
-def parse_iso_date(value: str) -> datetime:
-    """Parse an ISO 8601 date string to a timezone-aware datetime.
-
-    Raises ValueError with a clear message if parsing fails.
-    """
-    try:
-        parsed = datetime.fromisoformat(value)
-    except ValueError:
-        raise ValueError(
-            f"Invalid date format: '{value}'. "
-            "Expected ISO 8601 format (e.g. '2025-12-31' or '2025-12-31T14:00:00Z')."
-        ) from None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed
-
-
-# ---------------------------------------------------------------------------
-# Tool classes
-# ---------------------------------------------------------------------------
-
 @tool_parameters(
-    tool_parameters_schema(
-        title=StringSchema("The task title — a short description of what needs to be done"),
-        priority=StringSchema(
-            "Task priority level",
-            enum=["low", "medium", "high"],
-        ),
-        description=StringSchema(
-            "Optional longer description with details about the task",
-            nullable=True,
-        ),
-        due_date=StringSchema(
-            "Optional due date in ISO 8601 format (e.g. '2025-12-31' or '2025-12-31T14:00:00Z')",
-            nullable=True,
-        ),
-        tags=ArraySchema(
-            StringSchema("A tag label"),
-            description="Optional list of tags for categorization",
-        ),
+    ObjectSchema(
+        properties={
+            "title": StringSchema("The task title — a short description of what needs to be done"),
+            "priority": StringSchema(
+                "Task priority level",
+                enum=["low", "medium", "high"],
+            ),
+            "description": StringSchema(
+                "Optional longer description with details about the task",
+                nullable=True,
+            ),
+            "due_date": StringSchema(
+                "Optional due date. Accepts ISO 8601 (e.g. '2025-12-31' or "
+                "'2025-12-31T14:00:00Z') OR a natural-language phrase "
+                "(e.g. 'tomorrow at 6pm', 'in 2 hours', 'next Friday'). "
+                "Pass the user's phrase through as-is — the tool handles parsing.",
+                nullable=True,
+            ),
+            "tags": ArraySchema(
+                StringSchema("A tag label"),
+                description="Optional list of tags for categorization",
+            ),
+        },
         required=["title", "priority"],
-    )
+    ).to_json_schema()
 )
 class CreateTaskTool(Tool):
-    """Tool to create a new task."""
-
     def __init__(self, store: TaskStore) -> None:
         self._store = store
 
@@ -127,7 +90,7 @@ class CreateTaskTool(Tool):
         parsed_due: datetime | None = None
         if due_date is not None:
             try:
-                parsed_due = parse_iso_date(due_date)
+                parsed_due = resolve_due_date(due_date, datetime.now(get_user_timezone()))
             except ValueError as exc:
                 return f"Error: {exc}"
 
@@ -151,8 +114,6 @@ class CreateTaskTool(Tool):
     )
 )
 class ListTasksTool(Tool):
-    """Tool to list tasks, optionally filtered by status."""
-
     def __init__(self, store: TaskStore) -> None:
         self._store = store
 
@@ -186,8 +147,6 @@ class ListTasksTool(Tool):
     )
 )
 class GetTaskTool(Tool):
-    """Tool to retrieve a single task by ID."""
-
     def __init__(self, store: TaskStore) -> None:
         self._store = store
 
@@ -215,35 +174,35 @@ class GetTaskTool(Tool):
 
 
 @tool_parameters(
-    tool_parameters_schema(
-        task_id=StringSchema("The full hex ID of the task to update"),
-        title=StringSchema("New title for the task", nullable=True),
-        description=StringSchema("New description for the task", nullable=True),
-        status=StringSchema(
-            "New status for the task",
-            enum=["pending", "in_progress", "done"],
-            nullable=True,
-        ),
-        priority=StringSchema(
-            "New priority for the task",
-            enum=["low", "medium", "high"],
-            nullable=True,
-        ),
-        due_date=StringSchema(
-            "New due date in ISO 8601 format, or null to clear",
-            nullable=True,
-        ),
-        tags=ArraySchema(
-            StringSchema("A tag label"),
-            description="New tags list (replaces existing tags)",
-            nullable=True,
-        ),
+    ObjectSchema(
+        properties={
+            "task_id": StringSchema("The full hex ID of the task to update"),
+            "title": StringSchema("New title for the task", nullable=True),
+            "description": StringSchema("New description for the task", nullable=True),
+            "status": StringSchema(
+                "New status for the task",
+                enum=["pending", "in_progress", "done"],
+                nullable=True,
+            ),
+            "priority": StringSchema(
+                "New priority for the task",
+                enum=["low", "medium", "high"],
+                nullable=True,
+            ),
+            "due_date": StringSchema(
+                "New due date — ISO 8601 or natural-language phrase. Pass null to clear.",
+                nullable=True,
+            ),
+            "tags": ArraySchema(
+                StringSchema("A tag label"),
+                description="New tags list (replaces existing tags)",
+                nullable=True,
+            ),
+        },
         required=["task_id"],
-    )
+    ).to_json_schema()
 )
 class UpdateTaskTool(Tool):
-    """Tool to update fields on an existing task."""
-
     def __init__(self, store: TaskStore) -> None:
         self._store = store
 
@@ -270,9 +229,9 @@ class UpdateTaskTool(Tool):
     ) -> str:
         parsed_due: datetime | None = None
         has_due_date = due_date is not None
-        if has_due_date:
+        if due_date is not None:
             try:
-                parsed_due = parse_iso_date(due_date)  # type: ignore[arg-type]
+                parsed_due = resolve_due_date(due_date, datetime.now(get_user_timezone()))
             except ValueError as exc:
                 return f"Error: {exc}"
 
@@ -302,8 +261,6 @@ class UpdateTaskTool(Tool):
     )
 )
 class CompleteTaskTool(Tool):
-    """Tool to mark a task as done."""
-
     def __init__(self, store: TaskStore) -> None:
         self._store = store
 
@@ -326,17 +283,10 @@ class CompleteTaskTool(Tool):
         return f"Task completed:\n{format_task(task)}"
 
 
-# ---------------------------------------------------------------------------
-# Registration
-# ---------------------------------------------------------------------------
-
 def register_task_tools(registry: ToolRegistry, store: TaskStore) -> None:
     """Register all task CRUD tools into a ToolRegistry.
 
     Call this at startup after constructing the ToolRegistry and TaskStore.
-    Example:
-        store = TaskStore(Path("~/.nanobot/workspace/tasks.json"))
-        register_task_tools(loop.tools, store)
     """
     registry.register(CreateTaskTool(store=store))
     registry.register(ListTasksTool(store=store))
