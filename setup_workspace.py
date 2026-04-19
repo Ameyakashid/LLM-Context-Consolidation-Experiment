@@ -75,8 +75,8 @@ NANOBOT_WORKSPACE = NANOBOT_HOME / "workspace"
 
 TEMPLATE_FILES = [
     "SOUL.md", "USER.md", "HEARTBEAT.md", "CALENDAR.md", "MAGICMIRROR.md",
-    "SYNCALL.md", "states.yaml", "DASHBOARD.md", "disco_voices.yaml",
-    "memory/MEMORY.md",
+    "SYNCALL.md", "TASKWARRIOR.md", "states.yaml", "DASHBOARD.md",
+    "disco_voices.yaml", "memory/MEMORY.md",
 ]
 
 KOKORO_MODELS_DIR = NANOBOT_HOME / "models" / "kokoro"
