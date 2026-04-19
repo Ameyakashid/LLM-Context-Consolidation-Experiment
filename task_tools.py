@@ -283,9 +283,7 @@ class CompleteTaskTool(Tool):
         return f"Task completed:\n{format_task(task)}"
 
 
-def register_task_tools(
-    registry: ToolRegistry, store: TaskStoreProtocol,
-) -> int:
+def register_task_tools(registry: ToolRegistry, store: TaskStoreProtocol) -> int:
     """Register all task CRUD tools into a ToolRegistry.
 
     Call this at startup after constructing the ToolRegistry and TaskStore.
