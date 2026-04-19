@@ -1,5 +1,6 @@
 nanobot-ai==0.1.5
 pyyaml>=6.0
+croniter==6.2.2
 kokoro-onnx>=0.5.0
 av>=12.0.0
 python-dateutil>=2.9
