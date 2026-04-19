@@ -4,11 +4,13 @@ import asyncio
 import logging
 import os
 import sys
+from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from calendar_cache import CalendarCache
 from calendar_mcp_client import CalendarMCPClient
+from cron_callback_setup import setup_cron_callback
 from custom_gateway import (
     DEFAULT_STATE_FILE,
     SessionFlag,
@@ -20,6 +22,9 @@ from custom_gateway import (
     resolve_states_path,
 )
 from gcal_setup import is_gcal_enabled
+from pulse_checkin_dispatcher import PendingCheckinQueue
+from pulse_checkin_store import is_pulse_engine_enabled
+from pulse_gateway_setup import build_pulse_bundle
 
 log = logging.getLogger(__name__)
 
@@ -59,9 +64,13 @@ def run_gateway(workspace_arg: str | None, config_arg: str | None) -> int:
     repo_root = Path(__file__).resolve().parent
     stores = create_stores(data_dir, repo_root=repo_root, env=os.environ)
 
-    gcal_enabled = is_gcal_enabled(dict(os.environ))
+    env_map = dict(os.environ)
+    gcal_enabled = is_gcal_enabled(env_map)
     calendar_cache = CalendarCache() if gcal_enabled else None
     calendar_client = CalendarMCPClient() if gcal_enabled else None
+    pulse_queue = (
+        PendingCheckinQueue() if is_pulse_engine_enabled(env_map) else None
+    )
     hooks = create_hooks(
         stores=stores,
         states_path=states_path,
@@ -74,7 +83,20 @@ def run_gateway(workspace_arg: str | None, config_arg: str | None) -> int:
         calendar_cache=calendar_cache,
         calendar_client=calendar_client,
         repo_root=repo_root,
-        env=dict(os.environ),
+        env=env_map,
+        pulse_pending_queue=pulse_queue,
+    )
+    pulse_bundle = (
+        build_pulse_bundle(
+            hooks=hooks,
+            stores=stores,
+            env=env_map,
+            tz=tz,
+            pending_queue=pulse_queue,
+            get_current_date=lambda: datetime.now(tz).date(),
+        )
+        if pulse_queue is not None
+        else None
     )
 
     agent = AgentLoop(
@@ -103,7 +125,7 @@ def run_gateway(workspace_arg: str | None, config_arg: str | None) -> int:
     register_all_tools(agent.tools, stores, calendar_cache, calendar_client)
     register_voice_tools_deferred(agent.tools)
 
-    _setup_cron_callback(cron, agent, provider, bus)
+    setup_cron_callback(cron, agent, provider, bus)
     channels = ChannelManager(config, bus)
     heartbeat = _setup_heartbeat(
         config, agent, provider, session_manager, channels, bus, session_flag, tz_name,
@@ -118,6 +140,8 @@ def run_gateway(workspace_arg: str | None, config_arg: str | None) -> int:
         try:
             await cron.start()
             await heartbeat.start()
+            if pulse_bundle is not None:
+                pulse_bundle.start()
             await asyncio.gather(agent.run(), channels.start_all())
         except KeyboardInterrupt:
             log.info("Shutting down...")
@@ -126,6 +150,8 @@ def run_gateway(workspace_arg: str | None, config_arg: str | None) -> int:
             crashed = True
         finally:
             await agent.close_mcp()
+            if pulse_bundle is not None:
+                await pulse_bundle.stop()
             heartbeat.stop()
             cron.stop()
             agent.stop()
@@ -133,65 +159,6 @@ def run_gateway(workspace_arg: str | None, config_arg: str | None) -> int:
 
     asyncio.run(run())
     return 1 if crashed else 0
-
-
-def _setup_cron_callback(
-    cron: "CronService", agent: "AgentLoop", provider: "LLMProvider", bus: "MessageBus",
-) -> None:
-    """Wire up the cron job callback on the agent."""
-    from nanobot.cron.types import CronJob
-
-    async def on_cron_job(job: CronJob) -> str | None:
-        if job.name == "dream":
-            try:
-                await agent.dream.run()
-                log.info("Dream cron job completed")
-            except Exception:
-                log.exception("Dream cron job failed")
-            return None
-
-        from nanobot.agent.tools.cron import CronTool
-        from nanobot.agent.tools.message import MessageTool
-        from nanobot.utils.evaluator import evaluate_response
-
-        reminder_note = (
-            "[Scheduled Task] Timer finished.\n\n"
-            f"Task '{job.name}' has been triggered.\n"
-            f"Scheduled instruction: {job.payload.message}"
-        )
-        cron_tool = agent.tools.get("cron")
-        cron_token = None
-        if isinstance(cron_tool, CronTool):
-            cron_token = cron_tool.set_cron_context(True)
-        try:
-            resp = await agent.process_direct(
-                reminder_note,
-                session_key=f"cron:{job.id}",
-                channel=job.payload.channel or "cli",
-                chat_id=job.payload.to or "direct",
-            )
-        finally:
-            if isinstance(cron_tool, CronTool) and cron_token is not None:
-                cron_tool.reset_cron_context(cron_token)
-
-        response = resp.content if resp else ""
-        message_tool = agent.tools.get("message")
-        if isinstance(message_tool, MessageTool) and message_tool._sent_in_turn:
-            return response
-
-        if job.payload.deliver and job.payload.to and response:
-            should_notify = await evaluate_response(
-                response, reminder_note, provider, agent.model,
-            )
-            if should_notify:
-                from nanobot.bus.events import OutboundMessage
-                await bus.publish_outbound(OutboundMessage(
-                    channel=job.payload.channel or "cli",
-                    chat_id=job.payload.to, content=response,
-                ))
-        return response
-
-    cron.on_job = on_cron_job
 
 
 def _pick_heartbeat_target(

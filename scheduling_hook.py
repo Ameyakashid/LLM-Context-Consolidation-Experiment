@@ -11,7 +11,7 @@ what's due and decides whether to fire, modify, defer, or suppress.
 
 import logging
 from datetime import date, time
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 from checkin_schedule import CheckInScheduleStore, CheckInType
 from hook_context import HookContext
@@ -24,6 +24,9 @@ from schedule_engine import (
 )
 from state_detection import StateName
 from task_store import TaskStore
+
+if TYPE_CHECKING:
+    from pulse_checkin_dispatcher import PendingCheckinQueue
 
 log = logging.getLogger(__name__)
 
@@ -145,6 +148,8 @@ class SchedulingHook:
         get_cognitive_state: Callable[[], StateName],
         get_current_date: Callable[[], date],
         get_current_time: Callable[[], time],
+        pulse_mode: bool = False,
+        pending_queue: "PendingCheckinQueue | None" = None,
     ) -> None:
         self._schedule_store = schedule_store
         self._task_store = task_store
@@ -153,6 +158,8 @@ class SchedulingHook:
         self._get_cognitive_state = get_cognitive_state
         self._get_current_date = get_current_date
         self._get_current_time = get_current_time
+        self._pulse_mode = pulse_mode
+        self._pending_queue = pending_queue
 
     async def before_iteration(self, context: HookContext) -> None:
         """Evaluate due check-ins and inject into system prompt."""
@@ -171,6 +178,10 @@ class SchedulingHook:
             return
 
         if messages[0].get("role") != "system":
+            return
+
+        if self._pulse_mode:
+            self._drain_pending_queue(messages)
             return
 
         current_date = self._get_current_date()
@@ -228,4 +239,26 @@ class SchedulingHook:
             checkin.type_id,
             action.action,
             cognitive_state,
+        )
+
+    def _drain_pending_queue(self, messages: list[dict[str, str]]) -> None:
+        # Pulse-mode branch: the dispatcher has already evaluated state,
+        # assembled context, and advanced ``last_run`` before enqueuing.
+        # The hook's only responsibility here is prompt injection — one
+        # pending check-in per heartbeat tick, matching the legacy "one
+        # per tick" semantics.
+        if self._pending_queue is None:
+            return
+        pending = self._pending_queue.drain_one()
+        if pending is None:
+            return
+        messages[0] = {
+            **messages[0],
+            "content": inject_checkin_into_prompt(
+                messages[0]["content"], pending.prompt_block,
+            ),
+        }
+        log.info(
+            "Fired %s (action=pulse-drain, fire_date=%s)",
+            pending.checkin_type, pending.fire_date,
         )

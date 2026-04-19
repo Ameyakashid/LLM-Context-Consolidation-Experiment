@@ -13,8 +13,11 @@ import logging
 from collections.abc import Mapping
 from datetime import date, datetime, time
 from pathlib import Path
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 from zoneinfo import ZoneInfo
+
+if TYPE_CHECKING:
+    from pulse_checkin_dispatcher import PendingCheckinQueue
 
 from nanobot.agent.hook import AgentHook
 from nanobot.providers.base import LLMProvider
@@ -101,6 +104,7 @@ def create_hooks(
     calendar_client: CalendarMCPClient | None = None,
     repo_root: Path | None = None,
     env: Mapping[str, str] | None = None,
+    pulse_pending_queue: "PendingCheckinQueue | None" = None,
 ) -> list[AgentHook]:
     """Create the hook chain: up to 6 base hooks plus optional Disco/MM.
 
@@ -153,6 +157,8 @@ def create_hooks(
         get_cognitive_state=get_cognitive_state,
         get_current_date=get_current_date,
         get_current_time=get_current_time,
+        pulse_mode=pulse_pending_queue is not None,
+        pending_queue=pulse_pending_queue,
     )
     buffer_hook = BufferHook(
         buffer_store=buffer_store,
