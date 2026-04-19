@@ -16,6 +16,10 @@ build/
 ~/.nanobot/logs/
 ~/.nanobot/media/
 
+# Runtime logs
+*.log
+logs/
+
 # IDE
 .vscode/
 .idea/
