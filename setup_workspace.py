@@ -31,24 +31,34 @@ from magicmirror_setup import (
     is_magicmirror_enabled,
     render_magicmirror_config,
 )
+from taskwarrior_setup import (
+    build_taskwarrior,
+    is_taskwarrior_enabled,
+    resolve_taskwarrior_data_dir,
+    warn_if_migration_needed,
+)
 
 __all__ = [
     "build_google_calendar_mcp",
     "build_magicmirror",
+    "build_taskwarrior",
     "copy_workspace_files",
     "detect_platform",
     "download_file",
     "download_tts_models",
     "is_gcal_enabled",
     "is_magicmirror_enabled",
+    "is_taskwarrior_enabled",
     "load_env_file",
     "MAGICMIRROR_WEBHOOK_TEMPLATE_NAMES",
     "OPTIONAL_ENV_VARS",
     "render_magicmirror_config",
     "resolve_config_template",
+    "resolve_taskwarrior_data_dir",
     "setup_workspace",
     "strip_gcal_mcp_server",
     "validate_env_vars",
+    "warn_if_migration_needed",
     "write_config",
 ]
 
@@ -78,6 +88,9 @@ KOKORO_MODEL_FILES = {
 GCAL_MCP_DIR = REPO_ROOT / "mcp" / "google-calendar"
 GCAL_DATA_DIR = NANOBOT_HOME / "data" / "google-calendar"
 DEFAULT_GCAL_TOKEN_PATH = GCAL_DATA_DIR / "tokens.json"
+
+DEFAULT_TASKWARRIOR_DATA_DIR = REPO_ROOT / "workspace" / "data" / "taskwarrior"
+DEFAULT_JSON_TASKS_PATH = REPO_ROOT / "workspace" / "data" / "tasks.json"
 
 ENV_VARS = {
     "OPENROUTER_API_KEY": "OpenRouter API key",
@@ -253,6 +266,15 @@ def setup_workspace() -> None:
     build_magicmirror(REPO_ROOT, magicmirror_enabled)
     if magicmirror_enabled:
         render_magicmirror_config(REPO_ROOT, env)
+
+    taskwarrior_enabled = is_taskwarrior_enabled(env)
+    taskwarrior_data_dir = resolve_taskwarrior_data_dir(
+        env, DEFAULT_TASKWARRIOR_DATA_DIR,
+    )
+    build_taskwarrior(taskwarrior_data_dir, taskwarrior_enabled, platform)
+    warn_if_migration_needed(
+        taskwarrior_enabled, DEFAULT_JSON_TASKS_PATH, taskwarrior_data_dir,
+    )
 
     log.info("")
     log.info("Workspace deployed to %s", NANOBOT_HOME)

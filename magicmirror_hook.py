@@ -33,7 +33,7 @@ from magicmirror_webhook import (
     send_alert_async,
 )
 from state_detection import StateName
-from task_store import TaskStore
+from task_store import TaskStoreProtocol
 
 log = logging.getLogger(__name__)
 
@@ -148,7 +148,7 @@ class MagicMirrorHook:
         self,
         webhook_base_url: str,
         feed_dir: Path,
-        task_store: TaskStore,
+        task_store: TaskStoreProtocol,
         buffer_store: BufferStore,
         schedule_store: CheckInScheduleStore,
         is_scheduled_session: Callable[[], bool],

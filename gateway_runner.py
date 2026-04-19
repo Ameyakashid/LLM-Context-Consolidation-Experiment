@@ -56,13 +56,12 @@ def run_gateway(workspace_arg: str | None, config_arg: str | None) -> int:
     state_file_path = data_dir / DEFAULT_STATE_FILE
 
     session_flag = SessionFlag()
-    stores = create_stores(data_dir)
+    repo_root = Path(__file__).resolve().parent
+    stores = create_stores(data_dir, repo_root=repo_root, env=os.environ)
 
     gcal_enabled = is_gcal_enabled(dict(os.environ))
     calendar_cache = CalendarCache() if gcal_enabled else None
     calendar_client = CalendarMCPClient() if gcal_enabled else None
-
-    repo_root = Path(__file__).resolve().parent
     hooks = create_hooks(
         stores=stores,
         states_path=states_path,

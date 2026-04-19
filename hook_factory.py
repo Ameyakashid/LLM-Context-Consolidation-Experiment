@@ -37,7 +37,7 @@ from memory_store import MemoryEntryStore
 from scheduling_hook import SchedulingHook
 from state_detection import StateName, load_state_config
 from state_response_integration import StateResponseHook
-from task_store import TaskStore
+from task_store import TaskStoreProtocol
 from voice_trigger_hook import VoiceHook
 
 log = logging.getLogger(__name__)
@@ -115,7 +115,7 @@ def create_hooks(
     state_config = load_state_config(states_path)
     llm_call = LLMCallableWrapper(provider=provider, model=model)
 
-    task_store: TaskStore = stores["task"]  # type: ignore[assignment]
+    task_store: TaskStoreProtocol = stores["task"]  # type: ignore[assignment]
     buffer_store: BufferStore = stores["buffer"]  # type: ignore[assignment]
     memory_store: MemoryEntryStore = stores["memory"]  # type: ignore[assignment]
     schedule_store: CheckInScheduleStore = stores["schedule"]  # type: ignore[assignment]
@@ -229,7 +229,7 @@ def _append_disco_hook(
 def _maybe_build_magicmirror_hook(
     env: Mapping[str, str] | None,
     repo_root: Path | None,
-    task_store: TaskStore,
+    task_store: TaskStoreProtocol,
     buffer_store: BufferStore,
     schedule_store: CheckInScheduleStore,
     is_scheduled_session: Callable[[], bool],

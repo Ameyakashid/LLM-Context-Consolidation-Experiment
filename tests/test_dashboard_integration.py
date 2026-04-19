@@ -20,6 +20,8 @@ from dashboard_api import (
 )
 from task_store import TaskStore
 
+import dashboard_api
+
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -27,9 +29,11 @@ from task_store import TaskStore
 
 
 @pytest.fixture()
-def data_dir(tmp_path: Path) -> Path:
-    d = tmp_path / "data"
-    d.mkdir()
+def data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    monkeypatch.setattr(dashboard_api, "_repo_root", lambda: tmp_path)
+    monkeypatch.delenv("TASKWARRIOR_ENABLED", raising=False)
+    d = tmp_path / "workspace" / "data"
+    d.mkdir(parents=True)
     return d
 
 

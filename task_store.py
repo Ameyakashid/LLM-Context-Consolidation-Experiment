@@ -10,7 +10,7 @@ import logging
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, Field
 
@@ -208,3 +208,41 @@ class TaskStore:
         self._save()
         log.info("Deleted task %s: %s", task_id[:8], task.title)
         return task
+
+
+# ---------------------------------------------------------------------------
+# Protocol — shared contract for both JSON and Taskwarrior backends
+# ---------------------------------------------------------------------------
+
+@runtime_checkable
+class TaskStoreProtocol(Protocol):
+    """The 8-method contract consumers depend on.
+
+    Both :class:`TaskStore` (JSON) and
+    :class:`taskwarrior_store.TaskwarriorStore` satisfy this structurally.
+    Consumers (tools, hooks, dashboard handlers) should annotate with this
+    Protocol so either backend can be injected.
+    """
+
+    def create_task(
+        self,
+        title: str,
+        priority: TaskPriority,
+        description: str | None,
+        due_date: datetime | None,
+        tags: list[str],
+    ) -> Task: ...
+
+    def get_task(self, task_id: str) -> Task: ...
+
+    def list_tasks(self) -> list[Task]: ...
+
+    def list_tasks_by_status(self, status: TaskStatus) -> list[Task]: ...
+
+    def update_task(self, task_id: str, updates: TaskUpdate) -> Task: ...
+
+    def mark_complete(self, task_id: str) -> Task: ...
+
+    def delete_task(self, task_id: str) -> Task: ...
+
+    def reload(self) -> None: ...

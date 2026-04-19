@@ -21,9 +21,14 @@ from pathlib import Path
 from buffer_store import BufferStore
 from checkin_schedule import CheckInScheduleStore
 from cognitive_state_writer import read_cognitive_state
-from task_store import TaskStore
+from task_store_factory import build_task_store
 
 log = logging.getLogger(__name__)
+
+
+def _repo_root() -> Path:
+    """Return the repo root — the directory containing dashboard_api.py."""
+    return Path(__file__).resolve().parent
 
 ACTIVITY_FEED_LIMIT = 20
 
@@ -68,10 +73,7 @@ def handle_state(state_path: Path) -> dict[str, object]:
 
 def handle_tasks(data_dir: Path) -> dict[str, object]:
     """Return active (non-done) tasks."""
-    store_path = data_dir / "tasks.json"
-    if not store_path.exists():
-        return {"tasks": []}
-    store = TaskStore(store_path)
+    store = build_task_store(env=os.environ, repo_root=_repo_root())
     active = [
         t for t in store.list_tasks() if t.status != "done"
     ]
@@ -102,16 +104,14 @@ def _build_activity_feed(data_dir: Path) -> list[dict[str, object]]:
     """Assemble recent activity from store timestamps."""
     events: list[dict[str, object]] = []
 
-    tasks_path = data_dir / "tasks.json"
-    if tasks_path.exists():
-        store = TaskStore(tasks_path)
-        for task in store.list_tasks():
-            if task.status == "done":
-                events.append({
-                    "type": "task_completed",
-                    "title": task.title,
-                    "at": task.updated_at.isoformat(),
-                })
+    store = build_task_store(env=os.environ, repo_root=_repo_root())
+    for task in store.list_tasks():
+        if task.status == "done":
+            events.append({
+                "type": "task_completed",
+                "title": task.title,
+                "at": task.updated_at.isoformat(),
+            })
 
     buffers_path = data_dir / "buffers.json"
     if buffers_path.exists():

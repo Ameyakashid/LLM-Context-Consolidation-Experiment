@@ -22,7 +22,7 @@ from nanobot.agent.tools.schema import (
     tool_parameters_schema,
 )
 
-from task_store import TaskStore, TaskUpdate
+from task_store import TaskStoreProtocol, TaskUpdate
 from task_time_helpers import (
     format_task,
     format_task_list,
@@ -65,7 +65,7 @@ TaskPriority = Literal["low", "medium", "high"]
     ).to_json_schema()
 )
 class CreateTaskTool(Tool):
-    def __init__(self, store: TaskStore) -> None:
+    def __init__(self, store: TaskStoreProtocol) -> None:
         self._store = store
 
     @property
@@ -114,7 +114,7 @@ class CreateTaskTool(Tool):
     )
 )
 class ListTasksTool(Tool):
-    def __init__(self, store: TaskStore) -> None:
+    def __init__(self, store: TaskStoreProtocol) -> None:
         self._store = store
 
     @property
@@ -147,7 +147,7 @@ class ListTasksTool(Tool):
     )
 )
 class GetTaskTool(Tool):
-    def __init__(self, store: TaskStore) -> None:
+    def __init__(self, store: TaskStoreProtocol) -> None:
         self._store = store
 
     @property
@@ -203,7 +203,7 @@ class GetTaskTool(Tool):
     ).to_json_schema()
 )
 class UpdateTaskTool(Tool):
-    def __init__(self, store: TaskStore) -> None:
+    def __init__(self, store: TaskStoreProtocol) -> None:
         self._store = store
 
     @property
@@ -261,7 +261,7 @@ class UpdateTaskTool(Tool):
     )
 )
 class CompleteTaskTool(Tool):
-    def __init__(self, store: TaskStore) -> None:
+    def __init__(self, store: TaskStoreProtocol) -> None:
         self._store = store
 
     @property
@@ -283,7 +283,9 @@ class CompleteTaskTool(Tool):
         return f"Task completed:\n{format_task(task)}"
 
 
-def register_task_tools(registry: ToolRegistry, store: TaskStore) -> int:
+def register_task_tools(
+    registry: ToolRegistry, store: TaskStoreProtocol,
+) -> int:
     """Register all task CRUD tools into a ToolRegistry.
 
     Call this at startup after constructing the ToolRegistry and TaskStore.

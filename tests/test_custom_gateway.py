@@ -47,8 +47,8 @@ class TestCreateStores:
 
     def test_stores_create_files_on_use(self, tmp_data_dir: Path) -> None:
         stores = create_stores(tmp_data_dir)
-        from task_store import TaskStore
-        assert isinstance(stores["task"], TaskStore)
+        from task_store import TaskStoreProtocol
+        assert isinstance(stores["task"], TaskStoreProtocol)
 
 
 class TestResolveDataDir:

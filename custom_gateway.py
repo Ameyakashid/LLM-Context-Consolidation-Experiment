@@ -12,6 +12,7 @@ Environment variables:
 
 import logging
 import os
+from collections.abc import Mapping
 from pathlib import Path
 
 from nanobot.agent.tools.registry import ToolRegistry
@@ -32,7 +33,8 @@ from hook_factory import (
 )
 from memory_store import MemoryEntryStore
 from memory_tools import register_memory_tools
-from task_store import TaskStore
+from task_store import TaskStoreProtocol
+from task_store_factory import build_task_store
 from task_tools import register_task_tools
 from voice_tools import register_voice_tools
 
@@ -79,11 +81,25 @@ def resolve_states_path(workspace: Path) -> Path:
     return workspace / DEFAULT_STATES_FILENAME
 
 
-def create_stores(data_dir: Path) -> dict[str, object]:
-    """Initialize all 4 data stores, ensuring the data directory exists."""
+def create_stores(
+    data_dir: Path,
+    repo_root: Path | None = None,
+    env: Mapping[str, str] | None = None,
+) -> dict[str, object]:
+    """Initialize all 4 data stores, ensuring the data directory exists.
+
+    The task store is constructed via :func:`task_store_factory.build_task_store`
+    so the TASKWARRIOR_ENABLED flag picks the backend. ``repo_root`` and
+    ``env`` default to ``data_dir.parent`` and ``os.environ`` — callers
+    that need deterministic placement (tests) should pass explicit values.
+    """
     data_dir.mkdir(parents=True, exist_ok=True)
+    resolved_repo_root = repo_root if repo_root is not None else data_dir.parent
+    resolved_env = env if env is not None else os.environ
     return {
-        "task": TaskStore(storage_path=data_dir / "tasks.json"),
+        "task": build_task_store(
+            env=resolved_env, repo_root=resolved_repo_root,
+        ),
         "buffer": BufferStore(storage_path=data_dir / "buffers.json"),
         "memory": MemoryEntryStore(storage_path=data_dir / "memories.json"),
         "schedule": CheckInScheduleStore(
@@ -106,7 +122,7 @@ def register_all_tools(
     are provided the tools reuse them so the hook and the tools share
     one cache and one MCP dispatcher.
     """
-    task_store: TaskStore = stores["task"]  # type: ignore[assignment]
+    task_store: TaskStoreProtocol = stores["task"]  # type: ignore[assignment]
     buffer_store: BufferStore = stores["buffer"]  # type: ignore[assignment]
     memory_store: MemoryEntryStore = stores["memory"]  # type: ignore[assignment]
 
