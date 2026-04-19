@@ -25,16 +25,26 @@ from gcal_setup import (
     is_gcal_enabled,
     strip_gcal_mcp_server,
 )
+from magicmirror_setup import (
+    MAGICMIRROR_WEBHOOK_TEMPLATE_NAMES,
+    build_magicmirror,
+    is_magicmirror_enabled,
+    render_magicmirror_config,
+)
 
 __all__ = [
     "build_google_calendar_mcp",
+    "build_magicmirror",
     "copy_workspace_files",
     "detect_platform",
     "download_file",
     "download_tts_models",
     "is_gcal_enabled",
+    "is_magicmirror_enabled",
     "load_env_file",
+    "MAGICMIRROR_WEBHOOK_TEMPLATE_NAMES",
     "OPTIONAL_ENV_VARS",
+    "render_magicmirror_config",
     "resolve_config_template",
     "setup_workspace",
     "strip_gcal_mcp_server",
@@ -51,7 +61,7 @@ NANOBOT_HOME = Path.home() / ".nanobot"
 NANOBOT_WORKSPACE = NANOBOT_HOME / "workspace"
 
 TEMPLATE_FILES = [
-    "SOUL.md", "USER.md", "HEARTBEAT.md", "states.yaml",
+    "SOUL.md", "USER.md", "HEARTBEAT.md", "CALENDAR.md", "states.yaml",
     "DASHBOARD.md", "disco_voices.yaml", "memory/MEMORY.md",
 ]
 
@@ -238,6 +248,11 @@ def setup_workspace() -> None:
     log.info("Detected platform: %s", platform)
     download_tts_models(KOKORO_MODELS_DIR)
     build_google_calendar_mcp(GCAL_MCP_DIR, gcal_enabled, GCAL_DATA_DIR)
+
+    magicmirror_enabled = is_magicmirror_enabled(env)
+    build_magicmirror(REPO_ROOT, magicmirror_enabled)
+    if magicmirror_enabled:
+        render_magicmirror_config(REPO_ROOT, env)
 
     log.info("")
     log.info("Workspace deployed to %s", NANOBOT_HOME)
