@@ -40,6 +40,13 @@ workspace/data/
 *.jsonl
 state.json
 
+# Vendored Google Calendar MCP — build artefacts + real OAuth secrets
+mcp/google-calendar/node_modules/
+mcp/google-calendar/build/
+gcp-oauth.keys.json
+gcp-oauth.keys.*.json
+!gcp-oauth.keys.example.json
+
 # OS
 .DS_Store
 Thumbs.db
