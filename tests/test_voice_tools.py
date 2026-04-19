@@ -10,7 +10,7 @@ from voice_tools import MAX_TEXT_LENGTH, SpeakTool, register_voice_tools
 
 
 def _run(coro):  # type: ignore[no-untyped-def]
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 def _make_speak_tool() -> tuple[SpeakTool, AsyncMock]:
@@ -253,8 +253,9 @@ class TestRegisterVoiceTools:
         mock_registry = MagicMock()
         mock_message_tool = MagicMock()
 
-        register_voice_tools(mock_registry, mock_message_tool)
+        count = register_voice_tools(mock_registry, mock_message_tool)
 
+        assert count == 1
         mock_registry.register.assert_called_once()
         registered_tool = mock_registry.register.call_args[0][0]
         assert isinstance(registered_tool, SpeakTool)

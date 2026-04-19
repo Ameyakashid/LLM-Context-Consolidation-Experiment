@@ -283,17 +283,24 @@ class ManualDecrementTool(Tool):
 # Registration
 # ---------------------------------------------------------------------------
 
-def register_buffer_tools(registry: ToolRegistry, store: BufferStore) -> None:
+def register_buffer_tools(registry: ToolRegistry, store: BufferStore) -> int:
     """Register all buffer tools into a ToolRegistry.
 
     Call this at startup after constructing the ToolRegistry and BufferStore.
+    Returns the number of tools registered.
     Example:
         store = BufferStore(Path("~/.nanobot/workspace/buffers.json"))
         register_buffer_tools(loop.tools, store)
     """
-    registry.register(CreateBufferTool(store=store))
-    registry.register(ListBuffersTool(store=store))
-    registry.register(GetBufferStatusTool(store=store))
-    registry.register(RefillBufferTool(store=store))
-    registry.register(ManualDecrementTool(store=store))
-    log.info("Registered 5 buffer tools: create, list, get_status, refill, manual_decrement")
+    tools: list[Tool] = [
+        CreateBufferTool(store=store),
+        ListBuffersTool(store=store),
+        GetBufferStatusTool(store=store),
+        RefillBufferTool(store=store),
+        ManualDecrementTool(store=store),
+    ]
+    for tool in tools:
+        registry.register(tool)
+    count = len(tools)
+    log.info("Registered %d buffer tools: create, list, get_status, refill, manual_decrement", count)
+    return count

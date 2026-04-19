@@ -283,14 +283,21 @@ class CompleteTaskTool(Tool):
         return f"Task completed:\n{format_task(task)}"
 
 
-def register_task_tools(registry: ToolRegistry, store: TaskStore) -> None:
+def register_task_tools(registry: ToolRegistry, store: TaskStore) -> int:
     """Register all task CRUD tools into a ToolRegistry.
 
     Call this at startup after constructing the ToolRegistry and TaskStore.
+    Returns the number of tools registered.
     """
-    registry.register(CreateTaskTool(store=store))
-    registry.register(ListTasksTool(store=store))
-    registry.register(GetTaskTool(store=store))
-    registry.register(UpdateTaskTool(store=store))
-    registry.register(CompleteTaskTool(store=store))
-    log.info("Registered 5 task tools: create, list, get, update, complete")
+    tools: list[Tool] = [
+        CreateTaskTool(store=store),
+        ListTasksTool(store=store),
+        GetTaskTool(store=store),
+        UpdateTaskTool(store=store),
+        CompleteTaskTool(store=store),
+    ]
+    for tool in tools:
+        registry.register(tool)
+    count = len(tools)
+    log.info("Registered %d task tools: create, list, get, update, complete", count)
+    return count

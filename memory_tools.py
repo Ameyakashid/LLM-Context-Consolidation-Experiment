@@ -171,15 +171,22 @@ class DismissMemoryTool(Tool):
 # Registration
 # ---------------------------------------------------------------------------
 
-def register_memory_tools(registry: ToolRegistry, store: MemoryEntryStore) -> None:
+def register_memory_tools(registry: ToolRegistry, store: MemoryEntryStore) -> int:
     """Register all memory tools into a ToolRegistry.
 
     Call this at startup after constructing the ToolRegistry and MemoryEntryStore.
+    Returns the number of tools registered.
     Example:
         store = MemoryEntryStore(Path("~/.nanobot/workspace/memories.json"))
         register_memory_tools(loop.tools, store)
     """
-    registry.register(SaveMemoryTool(store=store))
-    registry.register(ListMemoriesTool(store=store))
-    registry.register(DismissMemoryTool(store=store))
-    log.info("Registered 3 memory tools: save, list, dismiss")
+    tools: list[Tool] = [
+        SaveMemoryTool(store=store),
+        ListMemoriesTool(store=store),
+        DismissMemoryTool(store=store),
+    ]
+    for tool in tools:
+        registry.register(tool)
+    count = len(tools)
+    log.info("Registered %d memory tools: save, list, dismiss", count)
+    return count

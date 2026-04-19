@@ -269,7 +269,8 @@ class TestManualDecrementTool:
 class TestRegisterBufferTools:
     def test_registers_all_five_tools(self, store: BufferStore) -> None:
         registry = ToolRegistry()
-        register_buffer_tools(registry, store)
+        count = register_buffer_tools(registry, store)
+        assert count == 5
         assert len(registry) == 5
         for tool_name in ["create_buffer", "list_buffers", "get_buffer_status", "refill_buffer", "manual_decrement"]:
             assert registry.has(tool_name), f"Missing tool: {tool_name}"

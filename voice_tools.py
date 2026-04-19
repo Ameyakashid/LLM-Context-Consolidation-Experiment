@@ -105,12 +105,18 @@ class SpeakTool(Tool):
         return result
 
 
-def register_voice_tools(registry: ToolRegistry, message_tool: Tool) -> None:
+def register_voice_tools(registry: ToolRegistry, message_tool: Tool) -> int:
     """Register voice tools into a ToolRegistry.
 
     Args:
         registry: The tool registry to register into.
         message_tool: The MessageTool instance for sending voice messages.
+
+    Returns the number of tools registered.
     """
-    registry.register(SpeakTool(message_tool=message_tool))
-    log.info("Registered 1 voice tool: speak")
+    tools: list[Tool] = [SpeakTool(message_tool=message_tool)]
+    for tool in tools:
+        registry.register(tool)
+    count = len(tools)
+    log.info("Registered %d voice tool: speak", count)
+    return count

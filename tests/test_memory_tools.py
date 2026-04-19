@@ -218,7 +218,8 @@ class TestDismissMemoryTool:
 class TestRegisterMemoryTools:
     def test_registers_all_three_tools(self, store: MemoryEntryStore) -> None:
         registry = ToolRegistry()
-        register_memory_tools(registry, store)
+        count = register_memory_tools(registry, store)
+        assert count == 3
         assert len(registry) == 3
         for tool_name in ["save_memory", "list_memories", "dismiss_memory"]:
             assert registry.has(tool_name), f"Missing tool: {tool_name}"

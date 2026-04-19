@@ -8,7 +8,7 @@ Adapted from `Antigravity-Agent-guided/rules/anti-slop-rules.md` for this projec
 
 ### Pure Functions and Explicit Behavior
 - Write pure functions — only modify return values, never input parameters or global state
-- Never use default parameter values — make all parameters explicit
+- Use default parameter values sparingly, only for truly optional behavior. Never mutable defaults — use a `None` sentinel and create the mutable inside the function body. When the right default isn't obvious, make the parameter explicit instead.
 - Single-purpose functions — no multi-mode behavior, no flag parameters
 - Raise errors explicitly with context: what was attempted, what failed, what to do
 - No fallbacks unless explicitly requested — fix root causes
@@ -55,7 +55,6 @@ Adapted from `Antigravity-Agent-guided/rules/anti-slop-rules.md` for this projec
 - **`logging` module only.** No `print()` in production code.
 - **Type-check with `mypy --strict` or `pyright`.**
 - **No `Any` type.** If you can't type it, you don't understand it.
-- **No mutable default arguments.** Use `None` sentinel + explicit creation inside the function body.
 
 ---
 
@@ -81,3 +80,35 @@ Adapted from `Antigravity-Agent-guided/rules/anti-slop-rules.md` for this projec
 - Tests must pass before commit.
 - Type checker must pass before commit.
 - These rules are loaded by every automated agent. Violations caught in verification will block the pipeline.
+
+---
+
+## Platform Compatibility (Mac is the deployment target)
+
+The bot's permanent home is the Mac Air M2. Development happens on Windows. All new code must work on both unless explicitly marked Mac-only and gated by an env var.
+
+- **Paths:** Use `pathlib.Path` for every file path. Never raw `\\` or `/` string concatenation. Never hardcoded `C:\Users\foo` or `/Users/foo`.
+- **Home and data dirs:** Use `Path.home()` or `os.path.expanduser('~')`. Read app-specific data locations from `.env` (`ADHD_DATA_DIR`, `NANOBOT_TIMEZONE`, etc.).
+- **Platform branching:** Do not write `if os.name == 'nt'` or `if sys.platform == 'darwin'` in new code. If a behavior is genuinely platform-specific, gate it behind an env var that the deployment sets — not behind runtime detection.
+- **Subprocess calls:** Pass `args` as a list. Never use `shell=True`. Windows and macOS quote and resolve binaries differently.
+- **File encoding:** Pass `encoding="utf-8"` explicitly to every `open()` call. Windows defaults to cp1252.
+- **Timezones:** Use `zoneinfo.ZoneInfo` (stdlib). Read the user's timezone from `.env` (`NANOBOT_TIMEZONE`). Never `datetime.now()` without an explicit timezone.
+- **Audio device selection (Kokoro TTS, Whisper):** Make the device configurable from `.env`. Do not hardcode device indexes — they shift between machines.
+- **Mac-only modules** (e.g., LaunchAgent integration, Mac mic capture in Task 19): live in clearly named files (`*_macos.py`) and are imported behind an env-var gate.
+
+---
+
+## JavaScript / Node Rules (MagicMirror modules — Task 15)
+
+MagicMirror² is JavaScript on Node + Electron. When implementing or modifying MagicMirror modules in `references/MagicMirror`-derived code:
+
+- **Strict mode:** `"use strict";` at the top of every file.
+- **Variables:** `const` by default, `let` only where reassignment is needed. Never `var`.
+- **Functions:** Arrow functions for callbacks; named `function` declarations for module-level definitions.
+- **Equality:** Always `===` and `!==`. Never `==` or `!=`.
+- **Async:** All asynchronous code via `async`/`await`. No raw promise chains in new code unless interfacing with a library that requires them.
+- **Module structure:** Follow MagicMirror's conventions — `Module.register("MMM-Name", { defaults: { ... }, start: function () { ... }, ... })`.
+- **Config:** Every module's defaults must be overridable from `config/config.js`. Hardcoded behavior is forbidden.
+- **Logging:** Use MagicMirror's `Log` helper, not raw `console.log`.
+- **Webhook handlers** (Task 15's MMM-WebHookAlerts integration): validate the source IP. Reject anything not from the local machine. No public internet exposure.
+- **No new npm dependencies** without justification. The MagicMirror ecosystem already covers most needs; adding a transitive dependency expands the supply-chain surface.
