@@ -47,6 +47,11 @@ gcp-oauth.keys.json
 gcp-oauth.keys.*.json
 !gcp-oauth.keys.example.json
 
+# Vendored MagicMirror — build artefacts + rendered config
+magicmirror/node_modules/
+magicmirror/modules/MMM-*/node_modules/
+magicmirror/config/config.js
+
 # OS
 .DS_Store
 Thumbs.db
