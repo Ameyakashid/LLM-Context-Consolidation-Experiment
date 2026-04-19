@@ -52,6 +52,10 @@ magicmirror/node_modules/
 magicmirror/modules/MMM-*/node_modules/
 magicmirror/config/config.js
 
+# MagicMirror runtime-generated markdown feeds (examples.md is vendored)
+magicmirror/modules/MMM-Markdown/markdown/*.md
+!magicmirror/modules/MMM-Markdown/markdown/examples.md
+
 # OS
 .DS_Store
 Thumbs.db
