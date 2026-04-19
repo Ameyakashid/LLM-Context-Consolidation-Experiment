@@ -30,6 +30,7 @@ logs/
 Antigravity-Agent-guided/
 _build/
 templates/
+!workspace/templates/
 rules/
 run-task.sh
 .claude/
