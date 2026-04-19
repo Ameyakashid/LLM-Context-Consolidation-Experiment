@@ -18,6 +18,29 @@ import sys
 import tempfile
 import urllib.request
 from pathlib import Path
+from typing import cast
+
+from gcal_setup import (
+    build_google_calendar_mcp,
+    is_gcal_enabled,
+    strip_gcal_mcp_server,
+)
+
+__all__ = [
+    "build_google_calendar_mcp",
+    "copy_workspace_files",
+    "detect_platform",
+    "download_file",
+    "download_tts_models",
+    "is_gcal_enabled",
+    "load_env_file",
+    "OPTIONAL_ENV_VARS",
+    "resolve_config_template",
+    "setup_workspace",
+    "strip_gcal_mcp_server",
+    "validate_env_vars",
+    "write_config",
+]
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 log = logging.getLogger(__name__)
@@ -42,6 +65,10 @@ KOKORO_MODEL_FILES = {
     "voices-v1.0.bin": f"{KOKORO_MODEL_BASE_URL}/voices-v1.0.bin",
 }
 
+GCAL_MCP_DIR = REPO_ROOT / "mcp" / "google-calendar"
+GCAL_DATA_DIR = NANOBOT_HOME / "data" / "google-calendar"
+DEFAULT_GCAL_TOKEN_PATH = GCAL_DATA_DIR / "tokens.json"
+
 ENV_VARS = {
     "OPENROUTER_API_KEY": "OpenRouter API key",
     "TELEGRAM_BOT_TOKEN": "Telegram bot token",
@@ -50,6 +77,14 @@ ENV_VARS = {
 
 OPTIONAL_ENV_VARS: dict[str, tuple[str, str]] = {
     "NANOBOT_TIMEZONE": ("IANA timezone", "America/New_York"),
+    "ADHD_REPO_ROOT": ("Absolute path to this repo", REPO_ROOT.as_posix()),
+    "GOOGLE_OAUTH_CREDENTIALS": (
+        "Absolute path to gcp-oauth.keys.json", "",
+    ),
+    "GOOGLE_CALENDAR_MCP_TOKEN_PATH": (
+        "Path where GCal refresh tokens are stored",
+        DEFAULT_GCAL_TOKEN_PATH.as_posix(),
+    ),
 }
 
 
@@ -100,7 +135,7 @@ def resolve_config_template(
         placeholder = f"${{{var_name}}}"
         if placeholder in raw:
             raw = raw.replace(placeholder, env.get(var_name, default))
-    return json.loads(raw)
+    return cast(dict[str, object], json.loads(raw))
 
 
 def copy_workspace_files(target_dir: Path) -> list[str]:
@@ -191,6 +226,9 @@ def setup_workspace() -> None:
 
     config_template = WORKSPACE_SRC / "config.json.template"
     config = resolve_config_template(config_template, env)
+    gcal_enabled = is_gcal_enabled(env)
+    if not gcal_enabled:
+        config = strip_gcal_mcp_server(config)
 
     create_required_dirs()
     copy_workspace_files(NANOBOT_WORKSPACE)
@@ -199,6 +237,7 @@ def setup_workspace() -> None:
     platform = detect_platform()
     log.info("Detected platform: %s", platform)
     download_tts_models(KOKORO_MODELS_DIR)
+    build_google_calendar_mcp(GCAL_MCP_DIR, gcal_enabled, GCAL_DATA_DIR)
 
     log.info("")
     log.info("Workspace deployed to %s", NANOBOT_HOME)
@@ -208,6 +247,6 @@ def setup_workspace() -> None:
 if __name__ == "__main__":
     try:
         setup_workspace()
-    except (FileNotFoundError, ValueError) as err:
+    except (FileNotFoundError, ValueError, RuntimeError) as err:
         log.error("Setup failed: %s", err)
         sys.exit(1)

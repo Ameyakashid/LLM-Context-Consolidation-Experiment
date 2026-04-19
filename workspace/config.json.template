@@ -40,6 +40,16 @@
   },
   "tools": {
     "web": { "enable": true },
-    "exec": { "enable": false }
+    "exec": { "enable": false },
+    "mcpServers": {
+      "google-calendar": {
+        "command": "node",
+        "args": ["${ADHD_REPO_ROOT}/mcp/google-calendar/build/index.js"],
+        "env": {
+          "GOOGLE_OAUTH_CREDENTIALS": "${GOOGLE_OAUTH_CREDENTIALS}",
+          "GOOGLE_CALENDAR_MCP_TOKEN_PATH": "${GOOGLE_CALENDAR_MCP_TOKEN_PATH}"
+        }
+      }
+    }
   }
 }
