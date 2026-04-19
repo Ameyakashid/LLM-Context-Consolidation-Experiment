@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import importlib
 import sys
+from pathlib import Path
 
 
 def _ensure_nanobot_importable() -> None:
@@ -25,4 +26,19 @@ def _ensure_nanobot_importable() -> None:
         ) from exc
 
 
+def _ensure_vendor_syncall_on_syspath() -> None:
+    """Make ``import syncall`` resolve from ``vendor/syncall/`` for tests.
+
+    See ``vendor/syncall/.vendor-source.md`` for why syncall is loaded via
+    sys.path rather than pip install.
+    """
+    repo_root = Path(__file__).resolve().parent
+    vendor_syncall = repo_root / "vendor" / "syncall"
+    if vendor_syncall.is_dir():
+        vendor_str = str(vendor_syncall)
+        if vendor_str not in sys.path:
+            sys.path.insert(0, vendor_str)
+
+
 _ensure_nanobot_importable()
+_ensure_vendor_syncall_on_syspath()

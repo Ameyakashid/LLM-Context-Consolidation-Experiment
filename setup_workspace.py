@@ -31,6 +31,7 @@ from magicmirror_setup import (
     is_magicmirror_enabled,
     render_magicmirror_config,
 )
+from syncall_setup import build_syncall, is_syncall_enabled
 from taskwarrior_setup import (
     build_taskwarrior,
     is_taskwarrior_enabled,
@@ -41,6 +42,7 @@ from taskwarrior_setup import (
 __all__ = [
     "build_google_calendar_mcp",
     "build_magicmirror",
+    "build_syncall",
     "build_taskwarrior",
     "copy_workspace_files",
     "detect_platform",
@@ -48,6 +50,7 @@ __all__ = [
     "download_tts_models",
     "is_gcal_enabled",
     "is_magicmirror_enabled",
+    "is_syncall_enabled",
     "is_taskwarrior_enabled",
     "load_env_file",
     "MAGICMIRROR_WEBHOOK_TEMPLATE_NAMES",
@@ -72,7 +75,8 @@ NANOBOT_WORKSPACE = NANOBOT_HOME / "workspace"
 
 TEMPLATE_FILES = [
     "SOUL.md", "USER.md", "HEARTBEAT.md", "CALENDAR.md", "MAGICMIRROR.md",
-    "states.yaml", "DASHBOARD.md", "disco_voices.yaml", "memory/MEMORY.md",
+    "SYNCALL.md", "states.yaml", "DASHBOARD.md", "disco_voices.yaml",
+    "memory/MEMORY.md",
 ]
 
 KOKORO_MODELS_DIR = NANOBOT_HOME / "models" / "kokoro"
@@ -275,6 +279,8 @@ def setup_workspace() -> None:
     warn_if_migration_needed(
         taskwarrior_enabled, DEFAULT_JSON_TASKS_PATH, taskwarrior_data_dir,
     )
+
+    build_syncall(env, REPO_ROOT, taskwarrior_data_dir)
 
     log.info("")
     log.info("Workspace deployed to %s", NANOBOT_HOME)

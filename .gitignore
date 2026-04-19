@@ -56,6 +56,21 @@ magicmirror/config/config.js
 magicmirror/modules/MMM-Markdown/markdown/*.md
 !magicmirror/modules/MMM-Markdown/markdown/examples.md
 
+# Vendored tasklib — pip install artefacts + live Taskwarrior data
+vendor/tasklib/*.egg-info/
+vendor/tasklib/build/
+workspace/data/taskwarrior/
+
+# Vendored syncall — stray pip install artefacts + live sync state
+vendor/syncall/*.egg-info/
+vendor/syncall/build/
+vendor/syncall/dist/
+workspace/data/syncall_cache/
+workspace/data/syncall_daemon.log
+# Home-scoped OAuth token cache syncall hardcodes at Path.home(); if a
+# stray copy lands under the repo root it must not be committed.
+.gcal_credentials.pickle
+
 # OS
 .DS_Store
 Thumbs.db
