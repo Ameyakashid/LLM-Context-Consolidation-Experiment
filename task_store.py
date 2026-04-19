@@ -1,5 +1,12 @@
-"""Task data model and persistent JSON storage for the ADHD assistant.
+"""JSON backend — fallback when ``TASKWARRIOR_ENABLED=false``.
 
+Post-Task-16 the canonical task backend is
+``taskwarrior_store.TaskwarriorStore``. This file stays in place as a
+reversible rollback path: flipping ``TASKWARRIOR_ENABLED=false`` and
+restarting restores JSON-serving without any code change. Do not archive
+or delete — the migration script leaves the source JSON untouched.
+
+Task data model and persistent JSON storage for the ADHD assistant.
 Provides a Task model (Pydantic BaseModel) and a TaskStore class that
 persists tasks to a JSON file with atomic writes. All CRUD operations
 write through to disk immediately.
