@@ -6,6 +6,8 @@ croniter==6.2.2
 tzdata>=2024.1; sys_platform == "win32"
 kokoro-onnx>=0.5.0
 av>=12.0.0
+# Voice input (Task 19)
+faster-whisper>=1.0.0
 python-dateutil>=2.9
 ./vendor/tasklib
 # Task 16 sub-03 — syncall transitive runtime deps. vendor/syncall is
