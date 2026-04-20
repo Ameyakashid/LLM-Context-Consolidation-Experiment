@@ -65,6 +65,14 @@ class TestResolveDataDir:
         result = resolve_data_dir(tmp_path)
         assert result == custom_dir.resolve()
 
+    def test_env_override_expands_tilde(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("ADHD_DATA_DIR", "~/adhd-data-test-dir")
+        result = resolve_data_dir(tmp_path)
+        assert str(result).startswith(str(Path.home()))
+        assert "~" not in str(result)
+
 
 class TestResolveStatesPath:
     def test_default_uses_workspace_subpath(self, tmp_path: Path) -> None:
@@ -79,6 +87,14 @@ class TestResolveStatesPath:
         monkeypatch.setenv("ADHD_STATES_PATH", str(custom_path))
         result = resolve_states_path(tmp_path)
         assert result == custom_path.resolve()
+
+    def test_env_override_expands_tilde(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("ADHD_STATES_PATH", "~/adhd-states-test.yaml")
+        result = resolve_states_path(tmp_path)
+        assert str(result).startswith(str(Path.home()))
+        assert "~" not in str(result)
 
 
 class TestHookAdapter:

@@ -22,6 +22,7 @@ from dashboard_api import (
     handle_schedule,
     handle_state,
     handle_tasks,
+    load_config_from_env,
     make_handler_class,
 )
 from memory_store import MemoryEntryStore
@@ -264,3 +265,21 @@ class TestHTTPEndpoints:
         assert status == 200
         assert len(body["tasks"]) == 1
         assert body["tasks"][0]["title"] == "Test task"
+
+
+class TestLoadConfigFromEnv:
+    def test_data_dir_expands_tilde(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DASHBOARD_DATA_DIR", "~/adhd-dashboard-test")
+        config = load_config_from_env()
+        assert str(config.data_dir).startswith(str(Path.home()))
+        assert "~" not in str(config.data_dir)
+
+    def test_static_dir_expands_tilde(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("DASHBOARD_STATIC_DIR", "~/adhd-static-test")
+        config = load_config_from_env()
+        assert str(config.static_dir).startswith(str(Path.home()))
+        assert "~" not in str(config.static_dir)

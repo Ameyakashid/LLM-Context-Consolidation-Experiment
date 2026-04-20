@@ -49,12 +49,17 @@ class DashboardConfig:
 
 
 def load_config_from_env() -> DashboardConfig:
-    """Read dashboard configuration from environment variables."""
+    """Read dashboard configuration from environment variables.
+
+    ``DASHBOARD_DATA_DIR`` and ``DASHBOARD_STATIC_DIR`` pass through
+    ``Path.expanduser`` so the Mac-block ``.env.example`` entries
+    (e.g. ``~/Library/Application Support/...``) resolve correctly.
+    """
     return DashboardConfig(
         host=os.environ.get("DASHBOARD_HOST", "0.0.0.0"),
         port=int(os.environ.get("DASHBOARD_PORT", "8085")),
-        data_dir=Path(os.environ.get("DASHBOARD_DATA_DIR", "data")),
-        static_dir=Path(os.environ.get("DASHBOARD_STATIC_DIR", "dashboard")),
+        data_dir=Path(os.environ.get("DASHBOARD_DATA_DIR", "data")).expanduser(),
+        static_dir=Path(os.environ.get("DASHBOARD_STATIC_DIR", "dashboard")).expanduser(),
         refresh_interval_ms=int(os.environ.get("DASHBOARD_REFRESH_INTERVAL", "30000")),
     )
 

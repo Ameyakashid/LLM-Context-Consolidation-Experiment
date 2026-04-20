@@ -69,7 +69,7 @@ def resolve_data_dir(workspace: Path) -> Path:
     """
     env_dir = os.environ.get("ADHD_DATA_DIR")
     if env_dir:
-        return Path(env_dir).resolve()
+        return Path(env_dir).expanduser().resolve()
     return workspace.parent / DEFAULT_DATA_DIR
 
 
@@ -77,7 +77,7 @@ def resolve_states_path(workspace: Path) -> Path:
     """Resolve the states.yaml path from env var or default under workspace."""
     env_path = os.environ.get("ADHD_STATES_PATH")
     if env_path:
-        return Path(env_path).resolve()
+        return Path(env_path).expanduser().resolve()
     return workspace / DEFAULT_STATES_FILENAME
 
 
