@@ -25,6 +25,8 @@ from gcal_setup import is_gcal_enabled
 from pulse_checkin_dispatcher import PendingCheckinQueue
 from pulse_checkin_store import is_pulse_engine_enabled
 from pulse_gateway_setup import build_pulse_bundle
+from pulse_system_concerns import is_dream_state_enabled
+from voice_input_integration import setup_voice_input
 
 log = logging.getLogger(__name__)
 
@@ -86,6 +88,11 @@ def run_gateway(workspace_arg: str | None, config_arg: str | None) -> int:
         env=env_map,
         pulse_pending_queue=pulse_queue,
     )
+    dream_kwargs = (
+        _build_dream_kwargs(provider, config, repo_root, tz)
+        if (pulse_queue is not None and is_dream_state_enabled(env_map))
+        else {}
+    )
     pulse_bundle = (
         build_pulse_bundle(
             hooks=hooks,
@@ -94,6 +101,8 @@ def run_gateway(workspace_arg: str | None, config_arg: str | None) -> int:
             tz=tz,
             pending_queue=pulse_queue,
             get_current_date=lambda: datetime.now(tz).date(),
+            data_dir=data_dir,
+            **dream_kwargs,
         )
         if pulse_queue is not None
         else None
@@ -127,6 +136,7 @@ def run_gateway(workspace_arg: str | None, config_arg: str | None) -> int:
 
     setup_cron_callback(cron, agent, provider, bus)
     channels = ChannelManager(config, bus)
+    setup_voice_input(env_map, channels.channels)
     heartbeat = _setup_heartbeat(
         config, agent, provider, session_manager, channels, bus, session_flag, tz_name,
     )
@@ -161,9 +171,7 @@ def run_gateway(workspace_arg: str | None, config_arg: str | None) -> int:
     return 1 if crashed else 0
 
 
-def _pick_heartbeat_target(
-    channels: "ChannelManager", session_manager: "SessionManager",
-) -> tuple[str, str]:
+def _pick_heartbeat_target(channels: "ChannelManager", session_manager: "SessionManager") -> tuple[str, str]:
     """Pick a routable channel/chat target for heartbeat messages."""
     enabled = set(channels.enabled_channels)
     for item in session_manager.list_sessions():
@@ -245,6 +253,27 @@ def _setup_dream(
         schedule=dream_cfg.build_schedule(tz_name),
         payload=CronPayload(kind="system_event"),
     ))
+
+
+def _build_dream_kwargs(
+    provider: "LLMProvider", config: "Config", repo_root: Path, tz: ZoneInfo,
+) -> dict[str, object]:
+    template_path = repo_root / "workspace" / "templates" / "DREAM.md"
+    prompt_template = template_path.read_text(encoding="utf-8")
+    model_name = config.agents.defaults.model
+
+    async def llm_caller(prompt: str, max_tokens: int) -> str:
+        response = await provider.chat_with_retry(
+            messages=[{"role": "user", "content": prompt}],
+            model=model_name, max_tokens=max_tokens,
+        )
+        return response.content or ""
+
+    return {
+        "dream_prompt_template": prompt_template,
+        "dream_llm_caller": llm_caller,
+        "dream_clock": lambda: datetime.now(tz),
+    }
 
 
 def _parse_cli_args(args: list[str]) -> tuple[str | None, str | None]:
