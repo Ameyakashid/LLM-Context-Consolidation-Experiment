@@ -77,7 +77,7 @@ TEMPLATE_FILES = [
     "SOUL.md", "USER.md", "HEARTBEAT.md", "CALENDAR.md", "MAGICMIRROR.md",
     "SYNCALL.md", "TASKWARRIOR.md", "TEMM1E_PULSE.md", "INSTALL_MAC.md",
     "MAC_PATHS.md", "LAUNCHAGENT.md", "MAC_DEPLOYMENT.md", "states.yaml",
-    "DASHBOARD.md", "disco_voices.yaml", "memory/MEMORY.md",
+    "DASHBOARD.md", "VOICE_INPUT.md", "disco_voices.yaml", "memory/MEMORY.md",
     "templates/DREAM.md",
 ]
 
