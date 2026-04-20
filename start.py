@@ -20,6 +20,7 @@ from typing import Mapping, NoReturn
 
 from dashboard_api import create_dashboard_server, load_config_from_env
 from gateway_runner import run_gateway
+from magicmirror_launcher import MagicMirrorProcess, launch_magicmirror
 from syncall_setup import is_syncall_enabled
 
 logging.basicConfig(
@@ -80,6 +81,27 @@ def stop_syncall_daemon(proc: subprocess.Popen[bytes] | None) -> None:
         proc.wait(timeout=5)
 
 
+def spawn_magicmirror(
+    env: Mapping[str, str],
+    popen: type[subprocess.Popen[bytes]] = subprocess.Popen,
+) -> MagicMirrorProcess | None:
+    """Flag-gated MagicMirror autostart wrapper.
+
+    Returns ``None`` when ``MAGICMIRROR_AUTOSTART_ENABLED`` is off so
+    the shutdown path stays a no-op.
+    """
+    repo_root = Path(__file__).resolve().parent
+    return launch_magicmirror(repo_root, env, popen=popen)
+
+
+def stop_magicmirror(proc: MagicMirrorProcess | None) -> None:
+    """Politely terminate the MagicMirror child; MagicMirror goes down
+    before syncall so the Fire Tablet disconnects cleanly first."""
+    if proc is None:
+        return
+    proc.stop()
+
+
 def main() -> NoReturn:
     shutdown_event = threading.Event()
 
@@ -91,6 +113,7 @@ def main() -> NoReturn:
     dashboard_thread.start()
 
     syncall_proc = spawn_syncall_daemon(os.environ)
+    magicmirror_proc = spawn_magicmirror(os.environ)
 
     log.info("Starting custom gateway...")
     try:
@@ -104,6 +127,7 @@ def main() -> NoReturn:
 
     log.info("Gateway exited with code %d", exit_code)
     shutdown_event.set()
+    stop_magicmirror(magicmirror_proc)
     stop_syncall_daemon(syncall_proc)
     dashboard_thread.join(timeout=5)
 

@@ -95,3 +95,20 @@ The `.md` files themselves are gitignored (except `examples.md` shipped by MMM-M
 ## Turning It Off
 
 Set `MAGICMIRROR_ENABLED=false` in `.env` and restart the agent. The flag-off path builds no hook, starts no thread pool, and writes no files. The vendored `magicmirror/` tree stays on disk but is inert.
+
+## Auto-Launch on Mac
+
+The mirror's `npm start` can be spawned automatically by `start.py` as a supervised child process. This is opt-in: set `MAGICMIRROR_AUTOSTART_ENABLED=true` once you have Node/npm installed and `magicmirror/config/config.js` rendered. Default is `false`.
+
+| Var | Default | What it does |
+|---|---|---|
+| `MAGICMIRROR_AUTOSTART_ENABLED` | `false` | Master switch for in-process autostart. Independent of `MAGICMIRROR_ENABLED`. |
+| `ADHD_LOG_DIR` | unset | When set, `magicmirror.log` and `magicmirror.err` land here instead of `<repo>/logs/`. Tildes are expanded. |
+
+**Shutdown order.** `start.py` stops the mirror child before the syncall daemon so the Fire Tablet disconnects cleanly first. Shutdown sends a terminate signal, waits 10 seconds, then falls back to kill.
+
+**Logs.** By default stdout/stderr go to `<repo>/logs/magicmirror.log` and `<repo>/logs/magicmirror.err` (append mode, UTF-8). If `ADHD_LOG_DIR` is set, logs land there instead. If the target directory is unwritable the launcher warns once and routes output to `DEVNULL` — MagicMirror still runs.
+
+**If autostart is off.** Run the mirror yourself from another terminal: `cd magicmirror && npm run server` (the documented HTTP-server command matching TL;DR step 3 above). The bot will not spawn or reap it.
+
+**If the flag is on but setup hasn't run.** `launch_magicmirror` raises `RuntimeError` pointing at the missing `config.js` with a hint to run `setup_workspace()` first.
