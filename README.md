@@ -1,5 +1,7 @@
 # ADHD Management App
 
+> **Deployment target: macOS Air M2.** See [`workspace/MAC_DEPLOYMENT.md`](workspace/MAC_DEPLOYMENT.md) for the setup runbook. Windows is development-only from Task 18 forward.
+
 An AI-powered accountability partner that lives in your Telegram. It detects your cognitive state in real-time, manages tasks with ADHD-aware framing, sends proactive check-ins at the right moments, tracks recurring obligations through a buffer system, speaks to you via local TTS, and displays a live dashboard on a Fire Tablet.
 
 Built on [nanobot-ai](https://github.com/palomachain/nanobot-ai) v0.1.5 with OpenRouter (Claude 3.5 Haiku).
@@ -138,6 +140,8 @@ A glanceable web page served locally, optimized for Fire Tablet (1024×600):
 - An [OpenRouter](https://openrouter.ai) API key
 - A Telegram bot token (from [@BotFather](https://t.me/BotFather))
 - Your Telegram user ID (from [@userinfobot](https://t.me/userinfobot))
+
+**On Mac:** follow [`workspace/MAC_DEPLOYMENT.md`](workspace/MAC_DEPLOYMENT.md) for the LaunchAgent install path.
 
 ### 1. Clone & Install
 
@@ -362,8 +366,8 @@ Designed to run within a **$7/month** budget on OpenRouter with Claude 3.5 Haiku
 
 | Platform | Role | Status |
 |----------|------|--------|
-| **macOS (M2)** | Primary deployment — runs bot + dashboard 24/7 | Supported |
-| **Windows** | Development — all tests pass | Supported |
+| **macOS (M2)** | Deployment target — runs bot + dashboard 24/7 via LaunchAgent | Deployment target |
+| **Windows** | Development only — test suite passes, not intended for production use | Development only |
 | **Linux** | Should work — no platform-specific code | Untested |
 | **Fire Tablet** | Dashboard display via Silk browser | Supported |
 
