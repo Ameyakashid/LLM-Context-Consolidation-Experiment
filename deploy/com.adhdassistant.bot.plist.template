@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  com.adhdassistant.bot.plist.template — macOS LaunchAgent for the bot.
+
+  Installed by scripts/install_launchagent.sh at:
+    ~/Library/LaunchAgents/com.adhdassistant.bot.plist
+
+  launchd does NOT expand variables or ~ in plist values. The installer
+  substitutes every ${PLACEHOLDER} below with an absolute value before
+  writing the rendered plist to disk.
+
+  Placeholders (every one must be substituted by the installer):
+    ${REPO_ROOT}          — absolute path to the cloned repo
+    ${HOME}               — absolute path to the user's home dir
+    ${ADHD_LOG_DIR}       — absolute log dir (from .env or $REPO_ROOT/logs)
+    ${NANOBOT_TIMEZONE}   — IANA timezone (e.g. America/New_York)
+    ${EXTRA_ENV_ENTRIES}  — zero or more <key>NAME</key><string>VALUE</string>
+                            lines for feature flags and path overrides the
+                            installer pulls from .env (whitelist only — no
+                            secrets; tokens stay in ~/.nanobot/config.json)
+
+  Key choices and why:
+    RunAtLoad=true           run at every login and at launchctl-load time.
+    KeepAlive={SuccessfulExit=false}  relaunch on crash; do NOT relaunch
+                             when the user stops the bot via launchctl
+                             unload (clean exit code 0).
+    ThrottleInterval=30      minimum 30s between respawns — protects
+                             against tight crash loops from import errors.
+    ProcessType=Interactive  matches "user-facing; wants scheduler
+                             preference when the user is at the keyboard".
+    PATH includes /opt/homebrew/bin so brew-installed binaries (task,
+    node, npm) resolve when start.py shells out.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.adhdassistant.bot</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>${REPO_ROOT}/.venv/bin/python</string>
+    <string>${REPO_ROOT}/start.py</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>${REPO_ROOT}</string>
+
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>${HOME}</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>LANG</key><string>en_US.UTF-8</string>
+    <key>ADHD_LOG_DIR</key><string>${ADHD_LOG_DIR}</string>
+    <key>NANOBOT_TIMEZONE</key><string>${NANOBOT_TIMEZONE}</string>
+${EXTRA_ENV_ENTRIES}
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>${ADHD_LOG_DIR}/bot.out.log</string>
+
+  <key>StandardErrorPath</key>
+  <string>${ADHD_LOG_DIR}/bot.err.log</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>ProcessType</key>
+  <string>Interactive</string>
+</dict>
+</plist>
