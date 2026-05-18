@@ -1,4 +1,6 @@
-# ADHD Management App
+# LLM-Context-Consolidation-Experiment
+
+> **Private Experiment:** An NLP pipeline designed to test the ability of an LLM to accurately classify real-time cognitive states (via a 6-state Markov model) and autonomously alter its response telemetry and data consolidation based on that classification.
 
 > **Deployment target: macOS Air M2.** See [`workspace/MAC_DEPLOYMENT.md`](workspace/MAC_DEPLOYMENT.md) for the setup runbook. Windows is development-only from Task 18 forward.
 
