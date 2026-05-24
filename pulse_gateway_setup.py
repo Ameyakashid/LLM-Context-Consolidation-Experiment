@@ -1,28 +1,25 @@
 """Pulse engine + consumer lifecycle for ``run_gateway``.
 
-Builds and owns the Pulse background tasks so ``gateway_runner`` stays
-thin.  A ``PulseBundle`` groups the cancel event, event queue, pending
-queue, engine, dispatcher, and the two asyncio tasks; ``build_pulse_bundle``
-constructs the bundle when the ``PULSE_ENGINE_ENABLED`` flag is on and
-returns None otherwise.
-
-Flag-off semantics: ``build_pulse_bundle`` returns None and only emits a
-single DEBUG log line.  No ``PulseCheckinStore`` is constructed, no
-tasks are created, and no clocks are started.
+``build_pulse_bundle`` constructs a ``PulseBundle`` when
+``PULSE_ENGINE_ENABLED`` is on (returns None otherwise) and extends
+the store with a Dream concern when ``DREAM_STATE_ENABLED`` is also on.
+Dream without Pulse logs WARN and still returns None.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from nanobot.agent.hook import AgentHook
 
 from checkin_schedule import CheckInScheduleStore
+from dream_engine import DreamEngine
 from memory_store import MemoryEntryStore
 from pulse_checkin_dispatcher import (
     PendingCheckinQueue,
@@ -30,8 +27,14 @@ from pulse_checkin_dispatcher import (
     consume_pulse_events,
 )
 from pulse_checkin_store import PulseCheckinStore, is_pulse_engine_enabled
-from pulse_engine import Pulse
+from pulse_engine import Pulse, PulseStoreProtocol
 from pulse_schedule import PulseEvent
+from pulse_system_concerns import (
+    DEFAULT_DREAM_CRON,
+    DreamConcernStore,
+    CompositePulseStore,
+    is_dream_state_enabled,
+)
 from state_detection import StateName
 from state_response_integration import StateResponseHook
 from task_store import TaskStoreProtocol
@@ -48,6 +51,10 @@ class PulseBundle:
     The two tasks (``pulse_task``, ``consumer_task``) are spawned by
     :meth:`start` and reaped by :meth:`stop`.  The bundle is single-use:
     calling ``start`` twice raises.
+
+    ``dream_engine`` is non-None when both ``PULSE_ENGINE_ENABLED`` and
+    ``DREAM_STATE_ENABLED`` are set — kept as a field so the flag-matrix
+    test can assert wiring presence without reaching into the dispatcher.
     """
 
     cancel: asyncio.Event
@@ -55,6 +62,7 @@ class PulseBundle:
     pending_queue: PendingCheckinQueue
     pulse: Pulse
     dispatcher: PulseCheckinDispatcher
+    dream_engine: DreamEngine | None = None
     _pulse_task: asyncio.Task[None] | None = field(default=None)
     _consumer_task: asyncio.Task[None] | None = field(default=None)
 
@@ -80,6 +88,9 @@ class PulseBundle:
         log.info("pulse.stop reason=cancelled")
         await _drain_task(self._pulse_task, timeout)
         await _drain_task(self._consumer_task, timeout)
+        dream_task = getattr(self.dispatcher, "active_dream_task", None)
+        if dream_task is not None and not dream_task.done():
+            await _drain_task(dream_task, timeout)
 
     def tasks(self) -> list[asyncio.Task[None]]:
         return [
@@ -95,15 +106,34 @@ def build_pulse_bundle(
     tz: ZoneInfo,
     pending_queue: PendingCheckinQueue,
     get_current_date: Callable[[], date],
+    *,
+    data_dir: Path | None = None,
+    dream_prompt_template: str | None = None,
+    dream_llm_caller: Callable[[str, int], Awaitable[str]] | None = None,
+    dream_clock: Callable[[], datetime] | None = None,
 ) -> PulseBundle | None:
-    """Construct a PulseBundle when the flag is on; else return None.
+    """Construct a PulseBundle when ``PULSE_ENGINE_ENABLED``; else None.
 
-    The caller owns ``pending_queue`` because ``SchedulingHook`` needs
-    the same instance — the hook drains it, the dispatcher pushes onto
-    it.  ``hooks`` is scanned for the ``StateResponseHook`` so the
-    dispatcher shares the same cognitive-state source as the hook chain.
+    Dream wiring is activated when ``DREAM_STATE_ENABLED`` is also set
+    and the four Dream-specific parameters are all provided. Otherwise
+    the bundle runs with check-ins only and ``dream_engine`` is None.
+
+    When Dream is requested but Pulse is OFF, a WARN is logged and the
+    function returns None — Dream cannot run without the Pulse loop.
+
+    The caller owns ``pending_queue`` because ``SchedulingHook`` drains
+    it while the dispatcher pushes onto it.  ``hooks`` is scanned for
+    ``StateResponseHook`` so the dispatcher shares the same cognitive
+    state source as the hook chain.
     """
-    if not is_pulse_engine_enabled(env):
+    pulse_on = is_pulse_engine_enabled(env)
+    dream_on = is_dream_state_enabled(env)
+    if dream_on and not pulse_on:
+        log.warning(
+            "DREAM_STATE_ENABLED=true but PULSE_ENGINE_ENABLED is not true; "
+            "Dream requires Pulse. Dream disabled.",
+        )
+    if not pulse_on:
         log.debug("Pulse engine disabled")
         return None
 
@@ -117,8 +147,25 @@ def build_pulse_bundle(
     )
 
     checkin_store = PulseCheckinStore(store=schedule_store, tz=tz)
+    dream_engine: DreamEngine | None = None
+    dream_last_run_path: Path | None = None
+    store_for_pulse: PulseStoreProtocol = checkin_store
+
+    if dream_on:
+        dream_engine, dream_last_run_path, store_for_pulse = _build_dream_wiring(
+            checkin_store=checkin_store,
+            memory_store=memory_store,
+            task_store=task_store,
+            env=env,
+            tz=tz,
+            data_dir=data_dir,
+            prompt_template=dream_prompt_template,
+            llm_caller=dream_llm_caller,
+            clock=dream_clock,
+        )
+
     cancel = asyncio.Event()
-    pulse, event_queue = Pulse.create(store=checkin_store, cancel=cancel)
+    pulse, event_queue = Pulse.create(store=store_for_pulse, cancel=cancel)
     dispatcher = PulseCheckinDispatcher(
         schedule_store=schedule_store,
         task_store=task_store,
@@ -126,14 +173,16 @@ def build_pulse_bundle(
         pending_queue=pending_queue,
         get_cognitive_state=state_accessor,
         get_current_date=get_current_date,
+        dream_engine=dream_engine,
+        dream_last_run_path=dream_last_run_path,
     )
 
     enabled_count = sum(
         1 for entry in schedule_store.list_entries() if entry.is_enabled
     )
     log.info(
-        "pulse.start concern_count=%d tz=%s flag=True",
-        enabled_count, tz.key,
+        "pulse.start concern_count=%d tz=%s flag=True dream=%s",
+        enabled_count, tz.key, dream_engine is not None,
     )
     return PulseBundle(
         cancel=cancel,
@@ -141,7 +190,42 @@ def build_pulse_bundle(
         pending_queue=pending_queue,
         pulse=pulse,
         dispatcher=dispatcher,
+        dream_engine=dream_engine,
     )
+
+
+def _build_dream_wiring(
+    *,
+    checkin_store: PulseCheckinStore,
+    memory_store: MemoryEntryStore,
+    task_store: TaskStoreProtocol,
+    env: Mapping[str, str],
+    tz: ZoneInfo,
+    data_dir: Path | None,
+    prompt_template: str | None,
+    llm_caller: Callable[[str, int], Awaitable[str]] | None,
+    clock: Callable[[], datetime] | None,
+) -> tuple[DreamEngine, Path, PulseStoreProtocol]:
+    if (
+        data_dir is None or prompt_template is None
+        or llm_caller is None or clock is None
+    ):
+        raise RuntimeError(
+            "build_pulse_bundle: DREAM_STATE_ENABLED=true requires "
+            "data_dir, dream_prompt_template, dream_llm_caller, and "
+            "dream_clock from the caller."
+        )
+    last_run_path = data_dir / "dream_last_run.json"
+    cron_expr = env.get("DREAM_STATE_CRON", DEFAULT_DREAM_CRON).strip()
+    engine = DreamEngine(
+        memory_store=memory_store, task_store=task_store,
+        session_log_path=data_dir / "dream_sessions.jsonl",
+        llm_caller=llm_caller, clock=clock, prompt_template=prompt_template,
+    )
+    dream_store = DreamConcernStore(
+        cron_expr=cron_expr, tz=tz, last_run_path=last_run_path,
+    )
+    return engine, last_run_path, CompositePulseStore([checkin_store, dream_store])
 
 
 def _derive_state_accessor(

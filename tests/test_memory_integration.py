@@ -42,7 +42,7 @@ def _system_prompt() -> str:
 
 
 def _run(coro):  # noqa: ANN001, ANN202
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------------------

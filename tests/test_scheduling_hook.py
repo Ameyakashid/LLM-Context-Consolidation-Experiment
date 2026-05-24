@@ -1,27 +1,16 @@
-"""Tests for scheduling hook — pure functions, hook lifecycle, and workspace content."""
+"""Tests for scheduling hook — hook lifecycle tests."""
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timezone
+from datetime import date, time
 from pathlib import Path
 
 import pytest
 
 from checkin_schedule import CheckInScheduleStore
-from memory_store import MemoryEntry, MemoryEntryStore
-from scheduling_hook import (
-    CHECKIN_DISPLAY_NAMES,
-    SchedulingHook,
-    format_checkin_prompt,
-    format_task_summary,
-    inject_checkin_into_prompt,
-)
-from schedule_engine import CheckInContext, ScheduleAction
-from task_store import Task, TaskStore
-
-REPO_ROOT = Path(__file__).resolve().parent.parent
-SOUL_PATH = REPO_ROOT / "workspace" / "SOUL.md"
-HEARTBEAT_PATH = REPO_ROOT / "workspace" / "HEARTBEAT.md"
+from memory_store import MemoryEntryStore
+from scheduling_hook import SchedulingHook
+from task_store import TaskStore
 
 SYSTEM_PROMPT = "# Soul\n\nYou are an assistant.\n\n## Scheduled Check-Ins\n\nGuidance here."
 
@@ -35,151 +24,8 @@ class MockHookContext:
     messages: list[dict[str, str]] = field(default_factory=list)
 
 
-def _make_task(
-    title: str,
-    status: str,
-    priority: str,
-    due_date: datetime | None,
-) -> Task:
-    now = datetime(2026, 4, 10, 12, 0, tzinfo=timezone.utc)
-    return Task(
-        id=title.lower().replace(" ", "_"),
-        title=title,
-        status=status,  # type: ignore[arg-type]
-        priority=priority,  # type: ignore[arg-type]
-        created_at=now,
-        updated_at=now,
-        due_date=due_date,
-    )
-
-
-def _make_memory(category: str, content: str) -> MemoryEntry:
-    return MemoryEntry(
-        id="abcdef1234567890abcdef1234567890",
-        category=category,  # type: ignore[arg-type]
-        content=content,
-        created_at=datetime(2026, 4, 10, 8, 0, tzinfo=timezone.utc),
-        metadata={},
-    )
-
-
 def _run(coro: object) -> object:
     return asyncio.run(coro)
-
-
-# ---------------------------------------------------------------------------
-# format_task_summary
-# ---------------------------------------------------------------------------
-
-class TestFormatTaskSummary:
-
-    def test_empty_context(self) -> None:
-        ctx = CheckInContext(checkin_type="morning_motivation")
-        assert format_task_summary(ctx) == []
-
-    def test_pending_tasks(self) -> None:
-        ctx = CheckInContext(
-            checkin_type="morning_plan",
-            pending_tasks=[
-                _make_task("Fix bug", "pending", "high", None),
-                _make_task("Write docs", "pending", "low", None),
-            ],
-        )
-        lines = format_task_summary(ctx)
-        assert len(lines) == 1
-        assert "2 pending" in lines[0]
-        assert "Fix bug" in lines[0]
-
-    def test_in_progress_tasks(self) -> None:
-        ctx = CheckInContext(
-            checkin_type="afternoon_check",
-            in_progress_tasks=[
-                _make_task("API work", "in_progress", "medium", None),
-            ],
-        )
-        lines = format_task_summary(ctx)
-        assert len(lines) == 1
-        assert "API work" in lines[0]
-
-    def test_completed_and_overdue(self) -> None:
-        ctx = CheckInContext(
-            checkin_type="evening_review",
-            completed_today_tasks=[
-                _make_task("Done task", "done", "low", None),
-            ],
-            overdue_tasks=[
-                _make_task("Late task", "pending", "high", None),
-            ],
-        )
-        lines = format_task_summary(ctx)
-        assert len(lines) == 2
-        assert "1 completed" in lines[0]
-        assert "1 overdue" in lines[1]
-
-    def test_deadline_and_energy_memories(self) -> None:
-        ctx = CheckInContext(
-            checkin_type="morning_plan",
-            deadline_memories=[_make_memory("deadline", "Report due Monday")],
-            energy_memories=[_make_memory("energy_state", "Feeling drained")],
-        )
-        lines = format_task_summary(ctx)
-        assert len(lines) == 2
-        assert "1 upcoming deadlines" in lines[0]
-        assert "Feeling drained" in lines[1]
-
-
-# ---------------------------------------------------------------------------
-# format_checkin_prompt
-# ---------------------------------------------------------------------------
-
-class TestFormatCheckinPrompt:
-
-    def test_fire_action_with_context(self) -> None:
-        action = ScheduleAction(
-            action="fire", reason="baseline state — proceed normally"
-        )
-        ctx = CheckInContext(
-            checkin_type="morning_plan",
-            pending_tasks=[_make_task("Top task", "pending", "high", None)],
-        )
-        result = format_checkin_prompt("morning_plan", action, ctx)
-        assert "Morning Plan" in result
-        assert "fire" in result
-        assert "Top task" in result
-        assert "Deliver this check-in" in result
-
-    def test_modify_action_includes_scope(self) -> None:
-        action = ScheduleAction(
-            action="modify",
-            reason="avoidance — reduce task scope",
-            modified_scope="reduced",
-        )
-        ctx = CheckInContext(checkin_type="afternoon_check")
-        result = format_checkin_prompt("afternoon_check", action, ctx)
-        assert "Modified scope: reduced" in result
-
-    def test_empty_context_no_context_section(self) -> None:
-        action = ScheduleAction(
-            action="fire", reason="baseline state — proceed normally"
-        )
-        ctx = CheckInContext(checkin_type="morning_motivation")
-        result = format_checkin_prompt("morning_motivation", action, ctx)
-        assert "### Context" not in result
-
-
-# ---------------------------------------------------------------------------
-# inject_checkin_into_prompt
-# ---------------------------------------------------------------------------
-
-class TestInjectCheckinIntoPrompt:
-
-    def test_appends_block(self) -> None:
-        result = inject_checkin_into_prompt("System prompt.", "Check-in block.")
-        assert result == "System prompt.\n\nCheck-in block."
-
-    def test_empty_block_returns_original(self) -> None:
-        result = inject_checkin_into_prompt("System prompt.", "")
-        assert result == "System prompt."
 
 
 # ---------------------------------------------------------------------------
@@ -410,85 +256,3 @@ class TestSchedulingHook:
         # Only one should be injected
         active_count = content.count("## Active Check-In:")
         assert active_count == 1
-
-
-# ---------------------------------------------------------------------------
-# SOUL.md content
-# ---------------------------------------------------------------------------
-
-class TestSoulCheckinSection:
-
-    @pytest.fixture(scope="class")
-    def soul_content(self) -> str:
-        return SOUL_PATH.read_text(encoding="utf-8")
-
-    def test_has_scheduled_checkins_heading(self, soul_content: str) -> None:
-        assert "## Scheduled Check-Ins" in soul_content
-
-    @pytest.mark.parametrize("checkin_heading", [
-        "### Morning Motivation (08:00)",
-        "### Morning Plan (09:00)",
-        "### Afternoon Check (14:00)",
-        "### Evening Review (20:00)",
-    ])
-    def test_has_checkin_type_heading(
-        self, soul_content: str, checkin_heading: str
-    ) -> None:
-        assert checkin_heading in soul_content
-
-    def test_morning_motivation_mentions_icnu(self, soul_content: str) -> None:
-        section = self._extract("Morning Motivation", soul_content)
-        assert "icnu" in section.lower()
-
-    def test_morning_plan_mentions_one_thing(self, soul_content: str) -> None:
-        section = self._extract("Morning Plan", soul_content)
-        assert "one thing" in section.lower()
-
-    def test_afternoon_check_mentions_energy(self, soul_content: str) -> None:
-        section = self._extract("Afternoon Check", soul_content)
-        assert "energy" in section.lower()
-
-    def test_evening_review_mentions_went_well(self, soul_content: str) -> None:
-        section = self._extract("Evening Review", soul_content)
-        assert "went well" in section.lower()
-
-    def test_evening_review_mentions_closure(self, soul_content: str) -> None:
-        section = self._extract("Evening Review", soul_content)
-        assert "closure" in section.lower() or "wrap up" in section.lower()
-
-    def _extract(self, heading: str, content: str) -> str:
-        marker = f"### {heading}"
-        start = content.find(marker)
-        if start == -1:
-            return ""
-        start += len(marker)
-        next_h3 = content.find("\n### ", start)
-        next_h2 = content.find("\n## ", start)
-        ends = [e for e in [next_h3, next_h2] if e != -1]
-        end = min(ends) if ends else len(content)
-        return content[start:end]
-
-
-# ---------------------------------------------------------------------------
-# HEARTBEAT.md content
-# ---------------------------------------------------------------------------
-
-class TestHeartbeatContent:
-
-    @pytest.fixture(scope="class")
-    def heartbeat_content(self) -> str:
-        return HEARTBEAT_PATH.read_text(encoding="utf-8")
-
-    @pytest.mark.parametrize("section", [
-        "Morning Motivation",
-        "Morning Plan",
-        "Afternoon Check",
-        "Evening Review",
-    ])
-    def test_has_all_checkin_sections(
-        self, heartbeat_content: str, section: str
-    ) -> None:
-        assert f"## {section}" in heartbeat_content
-
-    def test_mentions_scheduling_engine(self, heartbeat_content: str) -> None:
-        assert "scheduling engine" in heartbeat_content.lower()

@@ -8,18 +8,11 @@ against the current cognitive state, and either advances ``last_run``
 ``PendingCheckinQueue`` that ``SchedulingHook`` drains on the next
 heartbeat tick (fire/modify).
 
-Why Path C over ``agent.process_direct`` (Path A)
--------------------------------------------------
-Path A spawns a new session-scoped turn at fire time; Path C preserves
-the *exact* legacy turn shape (``messages[0]["content"]`` mutated inside
-the live heartbeat iteration), so the 24-hour parity gate in AC#2 is
-byte-identical — the LLM sees the same system block regardless of flag.
-``agent.process_direct`` (Path A) also requires duplicating
-``_pick_heartbeat_target`` out of ``gateway_runner`` and introduces a
-new session key (``"pulse"``) that sub-04's Dream engine would then have
-to consume separately.  Path B (``bus.publish_inbound``) was rejected in
-the research report because nanobot's pending-queue semantics expect a
-user/assistant message, not a system-prompt suffix.
+Path C preserves the exact legacy turn shape (``messages[0]["content"]``
+mutated inside the live heartbeat iteration), so the 24-hour parity
+gate in AC#2 is byte-identical. Sub-05 additionally wires a Dream branch
+that spawns ``DreamEngine.run()`` as a background task on the
+``"dream_state"`` concern id, preserving the sync ``dispatch`` surface.
 """
 
 from __future__ import annotations
@@ -28,13 +21,17 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime, timezone
+from pathlib import Path
 from typing import Protocol, cast
 
 from checkin_schedule import CheckInScheduleStore, CheckInType
+from dream_engine import DreamEngine
+from dream_types import DreamState
 from memory_store import MemoryEntryStore
 from pulse_checkin_store import advance_last_run, concern_id_to_checkin_type
 from pulse_schedule import PulseEvent
+from pulse_system_concerns import DREAM_CONCERN_ID, write_last_run
 from schedule_engine import (
     ScheduleAction,
     assemble_checkin_context,
@@ -109,15 +106,35 @@ class PulseCheckinDispatcher:
         pending_queue: PendingCheckinQueue,
         get_cognitive_state: Callable[[], StateName],
         get_current_date: Callable[[], date],
+        *,
+        dream_engine: DreamEngine | None = None,
+        dream_last_run_path: Path | None = None,
+        now_utc_provider: Callable[[], datetime] | None = None,
     ) -> None:
+        if dream_engine is not None and dream_last_run_path is None:
+            raise ValueError(
+                "PulseCheckinDispatcher requires dream_last_run_path when "
+                "dream_engine is set so successful runs can be persisted."
+            )
         self._schedule_store = schedule_store
         self._task_store = task_store
         self._memory_store = memory_store
         self._pending_queue = pending_queue
         self._get_cognitive_state = get_cognitive_state
         self._get_current_date = get_current_date
+        self._dream_engine = dream_engine
+        self._dream_last_run_path = dream_last_run_path
+        self._now_utc = now_utc_provider or _default_now_utc
+        self._active_dream_task: asyncio.Task[None] | None = None
+
+    @property
+    def active_dream_task(self) -> asyncio.Task[None] | None:
+        return self._active_dream_task
 
     def dispatch(self, event: PulseEvent) -> None:
+        if event.concern_id == DREAM_CONCERN_ID:
+            self._dispatch_dream_concern(event)
+            return
         checkin_type = concern_id_to_checkin_type(event.concern_id)
         if checkin_type is None:
             log.warning(
@@ -166,6 +183,54 @@ class PulseCheckinDispatcher:
             prompt_block=prompt_block,
         ))
         advance_last_run(self._schedule_store, checkin_type, today)
+
+    def _dispatch_dream_concern(self, event: PulseEvent) -> None:
+        if self._dream_engine is None or self._dream_last_run_path is None:
+            log.warning(
+                "pulse.dispatch received concern_id=%s but Dream engine is "
+                "not configured; dropping event.",
+                event.concern_id,
+            )
+            return
+        if self._active_dream_task is not None and not self._active_dream_task.done():
+            log.info("dream.skip reason=task_in_flight")
+            return
+        engine = self._dream_engine
+        if engine.get_state() == DreamState.RUNNING:
+            log.info("dream.skip reason=engine_state_running")
+            return
+        if engine.get_state() != DreamState.IDLE:
+            log.info(
+                "dream.reset prior_state=%s", engine.get_state().value,
+            )
+            engine.reset_state()
+        self._active_dream_task = asyncio.create_task(
+            self._run_dream_once(engine, self._dream_last_run_path),
+            name="dream-run",
+        )
+
+    async def _run_dream_once(
+        self, engine: DreamEngine, last_run_path: Path,
+    ) -> None:
+        try:
+            result = await engine.run()
+        except Exception as exc:
+            log.error(
+                "dream.run crashed: %s: %s", type(exc).__name__, exc,
+            )
+            return
+        write_last_run(last_run_path, self._now_utc())
+        log.info(
+            "dream.complete state=%s created=%d resolved=%d "
+            "prompt_tokens=%d completion_tokens=%d error=%s",
+            result.state.value, result.entries_created,
+            result.entries_resolved, result.prompt_tokens_est,
+            result.completion_tokens, result.error,
+        )
+
+
+def _default_now_utc() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class _DispatcherProtocol(Protocol):

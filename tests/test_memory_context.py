@@ -146,7 +146,7 @@ class TestInjectMemoriesIntoPrompt:
 class TestMemoryContextHook:
 
     def _run(self, coro):  # noqa: ANN001, ANN202
-        return asyncio.get_event_loop().run_until_complete(coro)
+        return asyncio.run(coro)
 
     def test_injects_entries_into_system_prompt(self, tmp_path: Path) -> None:
         store = MemoryEntryStore(storage_path=tmp_path / "mem.json")

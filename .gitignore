@@ -11,10 +11,9 @@ venv/
 dist/
 build/
 
-# nanobot runtime (not workspace templates — those are in repo)
-~/.nanobot/sessions/
-~/.nanobot/logs/
-~/.nanobot/media/
+# nanobot runtime lives in ~/.nanobot/ outside the repo; nothing to
+# ignore here. (gitignore does not expand ~, so any pattern would be a
+# no-op anyway.)
 
 # Runtime logs
 *.log
@@ -34,6 +33,9 @@ templates/
 rules/
 run-task.sh
 .claude/
+
+# Cloned reference repos (contain their own .git dirs)
+references/
 
 # User data (generated at runtime)
 workspace/memory/

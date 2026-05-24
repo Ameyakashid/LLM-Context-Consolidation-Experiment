@@ -132,7 +132,10 @@ def load_env_file(env_path: Path) -> dict[str, str]:
         if "=" not in stripped:
             continue
         key, _, value = stripped.partition("=")
-        env_vars[key.strip()] = value.strip()
+        value = value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            value = value[1:-1]
+        env_vars[key.strip()] = value
     return env_vars
 
 
@@ -141,7 +144,7 @@ def validate_env_vars(env: dict[str, str]) -> None:
     missing: list[str] = []
     for var_name, description in ENV_VARS.items():
         value = env.get(var_name, "")
-        if not value or "your-key-here" in value or value == "123456789":
+        if not value or "your-key-here" in value or "your-telegram" in value:
             missing.append(f"  {var_name} — {description}")
     if missing:
         raise ValueError(
@@ -154,17 +157,30 @@ def validate_env_vars(env: dict[str, str]) -> None:
 def resolve_config_template(
     template_path: Path, env: dict[str, str]
 ) -> dict[str, object]:
-    """Read config.json.template and resolve ${VAR} placeholders."""
+    """Read config.json.template and resolve ${VAR} placeholders.
+
+    All placeholders in the template appear inside JSON string literals.
+    Values are passed through ``json.dumps`` (with the outer quotes
+    stripped) so that ``"``, ``\\``, and control characters in env values
+    cannot break the surrounding JSON.
+    """
     raw = template_path.read_text(encoding="utf-8")
     for var_name in ENV_VARS:
         placeholder = f"${{{var_name}}}"
         if placeholder in raw:
-            raw = raw.replace(placeholder, env[var_name])
+            raw = raw.replace(placeholder, _escape_for_json_string(env[var_name]))
     for var_name, (_description, default) in OPTIONAL_ENV_VARS.items():
         placeholder = f"${{{var_name}}}"
         if placeholder in raw:
-            raw = raw.replace(placeholder, env.get(var_name, default))
+            raw = raw.replace(
+                placeholder,
+                _escape_for_json_string(env.get(var_name, default)),
+            )
     return cast(dict[str, object], json.loads(raw))
+
+
+def _escape_for_json_string(value: str) -> str:
+    return json.dumps(value)[1:-1]
 
 
 def copy_workspace_files(target_dir: Path) -> list[str]:

@@ -14,6 +14,7 @@ from state_detection import (
     DetectionResult,
     LLMCallable,
     StateConfig,
+    StateName,
     detect_state,
 )
 
@@ -24,7 +25,7 @@ log = logging.getLogger(__name__)
 STATE_INDICATOR_PREFIX = "[Current cognitive state: "
 STATE_INDICATOR_SUFFIX = "]"
 
-BASELINE_STATE = "baseline"
+BASELINE_STATE: StateName = "baseline"
 
 
 def build_state_indicator(state_name: str) -> str:
@@ -98,10 +99,10 @@ class StateResponseHook:
         self._llm_call = llm_call
         self._state_writer = state_writer
         self._state_file_path = state_file_path
-        self._current_state: str = BASELINE_STATE
+        self._current_state: StateName = BASELINE_STATE
 
     @property
-    def current_state(self) -> str:
+    def current_state(self) -> StateName:
         return self._current_state
 
     async def before_iteration(self, context: HookContext) -> None:

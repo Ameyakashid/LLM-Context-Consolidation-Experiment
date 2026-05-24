@@ -30,7 +30,7 @@ class TestSoulRequiredSections:
         "Communication Style",
         "Boundaries",
         "State-Aware Adaptation",
-        "Personality Voices",
+        "Disco Flavor Layer",
     ]
 
     @pytest.mark.parametrize("heading", REQUIRED_HEADINGS)

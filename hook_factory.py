@@ -132,7 +132,7 @@ def create_hooks(
     )
 
     def get_cognitive_state() -> StateName:
-        return state_hook.current_state  # type: ignore[return-value]
+        return state_hook.current_state
 
     def is_scheduled_session() -> bool:
         return session_flag.is_heartbeat

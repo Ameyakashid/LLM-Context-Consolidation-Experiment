@@ -45,6 +45,7 @@
       "google-calendar": {
         "command": "node",
         "args": ["${ADHD_REPO_ROOT}/mcp/google-calendar/build/index.js"],
+        "enabledTools": ["list-events", "get-freebusy"],
         "env": {
           "GOOGLE_OAUTH_CREDENTIALS": "${GOOGLE_OAUTH_CREDENTIALS}",
           "GOOGLE_CALENDAR_MCP_TOKEN_PATH": "${GOOGLE_CALENDAR_MCP_TOKEN_PATH}"

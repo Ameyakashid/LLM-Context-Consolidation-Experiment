@@ -83,10 +83,18 @@ class TestValidateEnvVars:
         env = {
             "OPENROUTER_API_KEY": "sk-or-v1-real-key",
             "TELEGRAM_BOT_TOKEN": "123:ABC",
-            "TELEGRAM_USER_ID": "123456789",
+            "TELEGRAM_USER_ID": "your-telegram-user-id",
         }
         with pytest.raises(ValueError, match="TELEGRAM_USER_ID"):
             validate_env_vars(env)
+
+    def test_accepts_real_user_id_that_starts_with_123456789(self) -> None:
+        env = {
+            "OPENROUTER_API_KEY": "sk-or-v1-real-key",
+            "TELEGRAM_BOT_TOKEN": "123:ABC",
+            "TELEGRAM_USER_ID": "123456789",
+        }
+        validate_env_vars(env)
 
     def test_rejects_missing_vars(self) -> None:
         with pytest.raises(ValueError, match="Missing or placeholder"):
