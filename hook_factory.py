@@ -9,6 +9,7 @@ on, and tacks ``DiscoHook`` on last when its YAML config is present.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Mapping
 from datetime import date, datetime, time
@@ -74,21 +75,48 @@ class SessionFlag:
 
 
 class LLMCallableWrapper:
-    """Wraps nanobot's LLMProvider.chat into our LLMCallable Protocol."""
+    """Wraps nanobot's LLMProvider.chat into our LLMCallable Protocol.
 
-    def __init__(self, provider: LLMProvider, model: str) -> None:
+    Retries on transient failures. nanobot's provider returns the string
+    ``"Error calling LLM: ..."`` (rather than raising) when the upstream
+    request errors out — without a retry, a single OpenRouter connection
+    blip silently kills the whole disco chain.
+    """
+
+    _MAX_ATTEMPTS = 3
+    _BACKOFF_SECONDS = 0.8
+
+    def __init__(self, provider: LLMProvider, model: str, max_tokens: int = 256) -> None:
         self._provider = provider
         self._model = model
+        self._max_tokens = max_tokens
 
     async def __call__(self, prompt: str) -> str:
         messages = [{"role": "user", "content": prompt}]
-        response = await self._provider.chat(
-            messages=messages,
-            model=self._model,
-            max_tokens=256,
-            temperature=0.1,
-        )
-        return response.content or ""
+        last = ""
+        for attempt in range(1, self._MAX_ATTEMPTS + 1):
+            try:
+                response = await self._provider.chat(
+                    messages=messages,
+                    model=self._model,
+                    max_tokens=self._max_tokens,
+                    temperature=0.1,
+                )
+                content = response.content or ""
+            except Exception as exc:
+                content = f"Error calling LLM: {exc}"
+
+            if content and not content.startswith("Error calling LLM"):
+                return content
+
+            last = content
+            if attempt < self._MAX_ATTEMPTS:
+                log.warning(
+                    "LLM call failed (attempt %d/%d): %s — retrying",
+                    attempt, self._MAX_ATTEMPTS, content[:80],
+                )
+                await asyncio.sleep(self._BACKOFF_SECONDS * attempt)
+        return last
 
 
 def create_hooks(
@@ -214,16 +242,33 @@ def _append_disco_hook(
     llm_call: LLMCallableWrapper,
     get_cognitive_state: Callable[[], StateName],
 ) -> None:
-    """Append DiscoHook in place when the YAML config is present."""
+    """Append DiscoHook in place when the YAML config is present.
+
+    Uses the disco_voices.yaml ``model:`` field for the voice LLM calls
+    (separate from the main agent model), so disco can run on a JSON-
+    friendly model while the main reply uses a different one.
+    """
     base = workspace if workspace is not None else states_path.parent
     disco_config_path = base / DEFAULT_DISCO_VOICES_FILENAME
     if not disco_config_path.exists():
         log.info("DiscoHook disabled (no config at %s)", disco_config_path)
         return
     try:
+        disco_cfg = load_disco_config(disco_config_path)
+        # Reasoning models (e.g. gpt-oss) spend output tokens on reasoning
+        # before the JSON; 256 truncates the JSON mid-object. Give disco room.
+        disco_llm_call = LLMCallableWrapper(
+            provider=llm_call._provider,
+            model=disco_cfg.model,
+            max_tokens=2000,
+        )
+        log.info(
+            "DiscoHook using model %s (main agent uses %s)",
+            disco_cfg.model, llm_call._model,
+        )
         disco_hook = DiscoHook(
-            config=load_disco_config(disco_config_path),
-            llm_call=llm_call,
+            config=disco_cfg,
+            llm_call=disco_llm_call,
             get_cognitive_state=get_cognitive_state,
         )
         hooks.append(disco_hook)

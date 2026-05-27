@@ -23,7 +23,7 @@ from state_detection import StateName
 log = logging.getLogger(__name__)
 
 DISCO_CHAIN_TIMEOUT_SECONDS = 15
-DISCO_SEPARATOR = "\n\n---\n\n"
+DISCO_SEPARATOR = "\n\n"
 
 
 # ---------------------------------------------------------------------------
@@ -93,17 +93,19 @@ class DiscoHook(AgentHook):
         LLM generates a response. Bridges to async via a thread pool.
         """
         if content is None:
+            log.info("[disco] finalize_content called with content=None, skipping")
             return content
 
         state = self._get_cognitive_state()
+        will_fire = should_activate_disco(state=state, intent=None, config=self._config)
+        log.info("[disco] state=%s will_fire=%s activation_states=%s", state, will_fire, self._config.activation_states)
 
-        if not should_activate_disco(
-            state=state, intent=None, config=self._config
-        ):
+        if not will_fire:
             return content
 
         user_message = extract_user_message(context.messages)
         task_context = extract_task_context(context.messages)
+        log.info("[disco] running chain for state=%s user_msg=%r", state, user_message[:80])
 
         try:
             comments = self._run_chain_sync(
@@ -116,13 +118,16 @@ class DiscoHook(AgentHook):
             log.exception("Disco chain failed; returning original content")
             return content
 
+        log.info("[disco] chain returned %d comments", len(comments))
         if not comments:
             return content
 
         disco_text = format_disco_output(comments, self._config)
         if not disco_text:
+            log.info("[disco] format_disco_output returned empty, skipping")
             return content
 
+        log.info("[disco] PREPENDING %d voice comments to response", len(comments))
         return disco_text + DISCO_SEPARATOR + content
 
     def _run_chain_sync(

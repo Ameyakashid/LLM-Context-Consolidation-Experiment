@@ -6,6 +6,7 @@ LLM calls, parses JSON responses, and formats the final output.
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -95,14 +96,30 @@ def build_voice_prompt(
     return "\n\n".join(sections)
 
 
+_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.IGNORECASE)
+
+
+def _strip_fences(raw: str) -> str:
+    """Strip markdown code fences Claude likes to wrap JSON in."""
+    s = raw.strip()
+    s = _FENCE_RE.sub("", s).strip()
+    # If model returned multiple fenced blocks, try to extract the first {...}
+    if not s.startswith("{"):
+        i, j = s.find("{"), s.rfind("}")
+        if i != -1 and j != -1 and j > i:
+            s = s[i:j + 1]
+    return s
+
+
 def parse_voice_response(
     raw_response: str,
     voice_name: str,
     is_final: bool,
 ) -> DiscoComment:
     """Parse JSON from LLM response into a DiscoComment."""
+    cleaned = _strip_fences(raw_response)
     try:
-        data = json.loads(raw_response.strip())
+        data = json.loads(cleaned)
     except json.JSONDecodeError as exc:
         raise ValueError(
             f"Voice '{voice_name}' returned malformed JSON: {raw_response!r}"
@@ -259,19 +276,33 @@ async def run_disco_chain(
     return comments
 
 
+_VOICE_EMOJI: dict[str, str] = {
+    "volition": "\U0001F3AD",       # \ud83c\udfad performing arts
+    "empathy": "\U0001F4AD",        # \ud83d\udcad thought balloon
+    "logic": "\U0001F9E0",          # \ud83e\udde0 brain
+    "inland_empire": "\U0001F30C",  # \ud83c\udf0c milky way
+    "rhetoric": "\U0001F399",       # \ud83c\udf99 microphone
+    "drama": "\U0001F3AC",          # \ud83c\udfac clapper
+}
+
+
 def format_disco_output(
     comments: list[DiscoComment],
     config: DiscoConfig,
 ) -> str:
-    """Format disco comments as *DISPLAYNAME [Difficulty: Outcome] -- "comment"*."""
-    lines: list[str] = []
+    """Format disco comments as a bold, emoji-prefixed block per voice."""
+    if not comments:
+        return ""
+    blocks: list[str] = ["\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501"]
     for comment in comments:
         if not comment.comment:
             continue
         voice = config.voices.get(comment.voice_name)
         display_name = voice.display_name if voice else comment.voice_name.upper()
-        lines.append(
-            f'*{display_name} [{comment.difficulty}: {comment.outcome}]'
-            f' \u2014 "{comment.comment}"*'
+        emoji = _VOICE_EMOJI.get(comment.voice_name, "\U0001F5E3")  # \ud83d\udde3 default
+        blocks.append(
+            f"{emoji} **{display_name}** _[{comment.difficulty} \u00b7 {comment.outcome}]_\n"
+            f'"{comment.comment}"'
         )
-    return "\n".join(lines)
+    blocks.append("\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501")
+    return "\n\n".join(blocks)

@@ -45,7 +45,7 @@ fi
 
 phase "[1/7] Homebrew packages"
 
-BREW_PACKAGES=(python@3.11 node task git ffmpeg)
+BREW_PACKAGES=(python@3.13 expat node task git ffmpeg)
 for pkg in "${BREW_PACKAGES[@]}"; do
   brew list "${pkg}" >/dev/null 2>&1 || brew install "${pkg}"
 done
@@ -54,10 +54,23 @@ done
 
 phase "[2/7] Python virtualenv"
 
+export DYLD_LIBRARY_PATH="/opt/homebrew/opt/expat/lib:${DYLD_LIBRARY_PATH:-}"
+
 if [[ -d .venv ]]; then
   echo ".venv already present — reusing."
 else
-  python3.11 -m venv .venv
+  python3.13 -m venv .venv
+fi
+
+# Persist the libexpat workaround into the venv so every future activation gets it.
+ACTIVATE=".venv/bin/activate"
+if ! grep -q "DYLD_LIBRARY_PATH=/opt/homebrew/opt/expat/lib" "${ACTIVATE}"; then
+  cat >> "${ACTIVATE}" <<'PATCH'
+
+# macOS Tahoe workaround: brewed Python's pyexpat is linked against a newer
+# libexpat than /usr/lib ships. Force brew's expat onto the dyld search path.
+export DYLD_LIBRARY_PATH="/opt/homebrew/opt/expat/lib:${DYLD_LIBRARY_PATH:-}"
+PATCH
 fi
 
 # ------------------------------------------------- [3/7] Python dependencies

@@ -18,6 +18,12 @@ import threading
 from pathlib import Path
 from typing import Mapping, NoReturn
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).resolve().parent / ".env", override=False)
+except ImportError:
+    pass
+
 from dashboard_api import create_dashboard_server, load_config_from_env
 from gateway_runner import run_gateway
 from magicmirror_launcher import MagicMirrorProcess, launch_magicmirror

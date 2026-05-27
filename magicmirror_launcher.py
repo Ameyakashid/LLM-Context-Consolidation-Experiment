@@ -47,7 +47,7 @@ def build_magicmirror_command(repo_root: Path) -> list[str]:
     string interpolation. The ``--prefix`` flag is npm's documented way
     to run a script in a different working directory without a ``cd``.
     """
-    return ["npm", "start", "--prefix", str(repo_root / "magicmirror")]
+    return ["npm", "run", "server", "--prefix", str(repo_root / "magicmirror")]
 
 
 def _resolve_log_dir(repo_root: Path, env: Mapping[str, str]) -> Path:

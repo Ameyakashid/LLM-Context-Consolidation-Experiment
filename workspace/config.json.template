@@ -9,7 +9,7 @@
   },
   "agents": {
     "defaults": {
-      "model": "x-ai/grok-4.1-fast",
+      "model": "deepseek/deepseek-v4-pro",
       "provider": "openrouter",
       "maxTokens": 4096,
       "contextWindowTokens": 65536,
@@ -31,7 +31,9 @@
     "telegram": {
       "enabled": true,
       "token": "${TELEGRAM_BOT_TOKEN}",
-      "allowFrom": ["${TELEGRAM_USER_ID}"],
+      "allowFrom": [
+        "${TELEGRAM_USER_ID}"
+      ],
       "streaming": true,
       "streamEditInterval": 0.6,
       "groupPolicy": "mention",
@@ -39,13 +41,22 @@
     }
   },
   "tools": {
-    "web": { "enable": true },
-    "exec": { "enable": false },
+    "web": {
+      "enable": true
+    },
+    "exec": {
+      "enable": false
+    },
     "mcpServers": {
       "google-calendar": {
         "command": "node",
-        "args": ["${ADHD_REPO_ROOT}/mcp/google-calendar/build/index.js"],
-        "enabledTools": ["list-events", "get-freebusy"],
+        "args": [
+          "${ADHD_REPO_ROOT}/mcp/google-calendar/build/index.js"
+        ],
+        "enabledTools": [
+          "list-events",
+          "get-freebusy"
+        ],
         "env": {
           "GOOGLE_OAUTH_CREDENTIALS": "${GOOGLE_OAUTH_CREDENTIALS}",
           "GOOGLE_CALENDAR_MCP_TOKEN_PATH": "${GOOGLE_CALENDAR_MCP_TOKEN_PATH}"

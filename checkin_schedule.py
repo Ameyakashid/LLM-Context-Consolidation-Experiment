@@ -122,10 +122,13 @@ def is_checkin_due(
         return False
     if entry.last_run_date == current_date:
         return False
-    if current_time < entry.target_time:
+    if current_time.replace(tzinfo=None) < entry.target_time.replace(tzinfo=None):
         return False
-    target_dt = datetime.combine(current_date, entry.target_time)
-    current_dt = datetime.combine(current_date, current_time)
+    # Schedule logic is wall-clock local; strip tzinfo so a naive/aware mix
+    # (introduced when current_time carries a tz but target_time doesn't, or
+    # vice versa) can't raise "can't subtract offset-naive and offset-aware".
+    target_dt = datetime.combine(current_date, entry.target_time.replace(tzinfo=None))
+    current_dt = datetime.combine(current_date, current_time.replace(tzinfo=None))
     elapsed = current_dt - target_dt
     if elapsed > timedelta(minutes=entry.staleness_minutes):
         return False

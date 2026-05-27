@@ -8,13 +8,13 @@ activation_states:
   - avoidance
   - overwhelm
   - rsd
+  - baseline
+  - focus
+  - hyperfocus
 
-skip_intents:
-  - list_tasks
-  - create_task
-  - simple_query
+skip_intents: []
 
-model: "anthropic/claude-3-haiku"
+model: "openai/gpt-oss-120b"
 max_voices: 3
 first_voice: volition
 

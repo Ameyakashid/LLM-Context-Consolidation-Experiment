@@ -10,16 +10,17 @@ av>=12.0.0
 faster-whisper>=1.0.0
 python-dateutil>=2.9
 ./vendor/tasklib
-# Task 16 sub-03 — syncall transitive runtime deps. vendor/syncall is
-# loaded via sys.path (see vendor/syncall/.vendor-source.md); these pins
-# cover the `tw` + `google` extras without pip-installing syncall itself.
-taskw-ng==0.2.7
-xdg>=6.0.0
-google-api-python-client>=2.140.0
-google-auth-oauthlib>=0.4.6,<2.0
-bidict>=0.21.4,<1.0
-click>=8.1.7,<9.0
-loguru>=0.5.3,<1.0
-rfc3339>=6.2,<7.0
-item-synchronizer>=1.1.5,<2.0
-bubop==0.1.12
+# Task 16 sub-03 — syncall transitive runtime deps. Disabled for the
+# Python 3.13 install: bubop 0.1.12 pins PyYAML<5.4 which has no 3.13
+# wheel and conflicts with line 2's pyyaml>=6.0. Re-enable once SYNCALL
+# is needed (and bump bubop to >=0.2.3).
+# taskw-ng==0.2.7
+# xdg>=6.0.0
+# google-api-python-client>=2.140.0
+# google-auth-oauthlib>=0.4.6,<2.0
+# bidict>=0.21.4,<1.0
+# click>=8.1.7,<9.0
+# loguru>=0.5.3,<1.0
+# rfc3339>=6.2,<7.0
+# item-synchronizer>=1.1.5,<2.0
+# bubop==0.1.12
