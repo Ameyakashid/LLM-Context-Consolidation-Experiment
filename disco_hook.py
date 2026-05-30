@@ -70,6 +70,9 @@ class DiscoHook(AgentHook):
 
     Constructor callables decouple the hook from runtime concerns:
     - get_cognitive_state: returns last-known StateName from StateResponseHook
+    - on_comments: optional sink for fired comments (the Cabinet voice buffer).
+      Called with the raw ``list[DiscoComment]`` whenever the chain fires;
+      defaults to a no-op so chat behavior is unchanged.
     """
 
     def __init__(
@@ -77,10 +80,12 @@ class DiscoHook(AgentHook):
         config: DiscoConfig,
         llm_call: LLMCallable,
         get_cognitive_state: Callable[[], StateName],
+        on_comments: Callable[[list[object]], None] | None = None,
     ) -> None:
         self._config = config
         self._llm_call = llm_call
         self._get_cognitive_state = get_cognitive_state
+        self._on_comments = on_comments
 
     def finalize_content(
         self,
@@ -121,6 +126,13 @@ class DiscoHook(AgentHook):
         log.info("[disco] chain returned %d comments", len(comments))
         if not comments:
             return content
+
+        # Capture fired comments for the Cabinet voice buffer (chat unchanged).
+        if self._on_comments is not None:
+            try:
+                self._on_comments(comments)
+            except Exception:
+                log.exception("[disco] on_comments sink failed (ignored)")
 
         disco_text = format_disco_output(comments, self._config)
         if not disco_text:

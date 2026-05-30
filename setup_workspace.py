@@ -25,11 +25,11 @@ from gcal_setup import (
     is_gcal_enabled,
     strip_gcal_mcp_server,
 )
-from magicmirror_setup import (
-    MAGICMIRROR_WEBHOOK_TEMPLATE_NAMES,
-    build_magicmirror,
-    is_magicmirror_enabled,
-    render_magicmirror_config,
+from cabinet_server import (
+    is_cabinet_enabled,
+    resolve_cabinet_dir,
+    resolve_cabinet_feed_dir,
+    resolve_wallpaper_dir,
 )
 from syncall_setup import build_syncall, is_syncall_enabled
 from taskwarrior_setup import (
@@ -41,7 +41,6 @@ from taskwarrior_setup import (
 
 __all__ = [
     "build_google_calendar_mcp",
-    "build_magicmirror",
     "build_syncall",
     "build_taskwarrior",
     "copy_workspace_files",
@@ -49,13 +48,10 @@ __all__ = [
     "download_file",
     "download_tts_models",
     "is_gcal_enabled",
-    "is_magicmirror_enabled",
     "is_syncall_enabled",
     "is_taskwarrior_enabled",
     "load_env_file",
-    "MAGICMIRROR_WEBHOOK_TEMPLATE_NAMES",
     "OPTIONAL_ENV_VARS",
-    "render_magicmirror_config",
     "resolve_config_template",
     "resolve_taskwarrior_data_dir",
     "setup_workspace",
@@ -74,7 +70,7 @@ NANOBOT_HOME = Path.home() / ".nanobot"
 NANOBOT_WORKSPACE = NANOBOT_HOME / "workspace"
 
 TEMPLATE_FILES = [
-    "SOUL.md", "USER.md", "HEARTBEAT.md", "CALENDAR.md", "MAGICMIRROR.md",
+    "SOUL.md", "USER.md", "HEARTBEAT.md", "CALENDAR.md", "CABINET.md",
     "SYNCALL.md", "TASKWARRIOR.md", "TEMM1E_PULSE.md", "INSTALL_MAC.md",
     "MAC_PATHS.md", "LAUNCHAGENT.md", "MAC_DEPLOYMENT.md", "states.yaml",
     "DASHBOARD.md", "VOICE_INPUT.md", "disco_voices.yaml", "memory/MEMORY.md",
@@ -284,10 +280,16 @@ def setup_workspace() -> None:
     download_tts_models(KOKORO_MODELS_DIR)
     build_google_calendar_mcp(GCAL_MCP_DIR, gcal_enabled, GCAL_DATA_DIR)
 
-    magicmirror_enabled = is_magicmirror_enabled(env)
-    build_magicmirror(REPO_ROOT, magicmirror_enabled)
-    if magicmirror_enabled:
-        render_magicmirror_config(REPO_ROOT, env)
+    if is_cabinet_enabled(env):
+        cabinet_dir = resolve_cabinet_dir(REPO_ROOT)
+        if not (cabinet_dir / "index.html").is_file():
+            log.warning(
+                "CABINET_ENABLED but cabinet/index.html is missing at %s",
+                cabinet_dir,
+            )
+        resolve_cabinet_feed_dir(REPO_ROOT).mkdir(parents=True, exist_ok=True)
+        resolve_wallpaper_dir(REPO_ROOT, env).mkdir(parents=True, exist_ok=True)
+        log.info("Cabinet display enabled (Node-free static server)")
 
     taskwarrior_enabled = is_taskwarrior_enabled(env)
     taskwarrior_data_dir = resolve_taskwarrior_data_dir(

@@ -1,7 +1,7 @@
 """Syncall feature-flag setup helpers.
 
-Mirrors ``taskwarrior_setup.py`` / ``gcal_setup.py`` / ``magicmirror_setup.py``:
-env-var flag check, path resolution, and a ``build_syncall()`` step invoked
+Mirrors ``taskwarrior_setup.py`` / ``gcal_setup.py``: env-var flag check,
+path resolution, and a ``build_syncall()`` step invoked
 from ``setup_workspace.setup_workspace()``. Nothing here launches the
 daemon — that is ``syncall_daemon.main()`` and is wired by ``start.py``.
 """

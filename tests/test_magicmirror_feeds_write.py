@@ -15,24 +15,8 @@ from magicmirror_feeds import (
     SCHEDULE_FEED_FILENAME,
     STATE_BUFFERS_FEED_FILENAME,
     TASKS_FEED_FILENAME,
-    resolve_feed_dir,
     write_feeds,
 )
-
-
-class TestResolveFeedDir:
-    def test_points_at_markdown_subdir(self, tmp_path: Path) -> None:
-        feed = resolve_feed_dir(tmp_path)
-        assert feed == (
-            tmp_path / "magicmirror" / "modules" / "MMM-Markdown" / "markdown"
-        )
-
-    def test_matches_repo_tree(self) -> None:
-        repo_root = Path(__file__).resolve().parents[1]
-        feed = resolve_feed_dir(repo_root)
-        assert feed.is_dir(), (
-            f"Expected vendored MMM-Markdown markdown dir at {feed}"
-        )
 
 
 class TestWriteFeeds:

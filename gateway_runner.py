@@ -8,6 +8,14 @@ from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from cabinet_flashcards import FlashcardPoolGenerator, flashcards_interval_from_env
+from cabinet_news import NewsRefresher, news_settings_from_env
+from cabinet_server import (
+    is_cabinet_enabled,
+    resolve_cabinet_feed_dir,
+    resolve_wallpaper_dir,
+)
+from cabinet_wallpapers import WallpaperWatcher, wallpaper_interval_from_env
 from calendar_cache import CalendarCache
 from calendar_mcp_client import CalendarMCPClient
 from cron_callback_setup import setup_cron_callback
@@ -73,6 +81,7 @@ def run_gateway(workspace_arg: str | None, config_arg: str | None) -> int:
     pulse_queue = (
         PendingCheckinQueue() if is_pulse_engine_enabled(env_map) else None
     )
+    cabinet_services: dict[str, object] = {}
     hooks = create_hooks(
         stores=stores,
         states_path=states_path,
@@ -87,7 +96,40 @@ def run_gateway(workspace_arg: str | None, config_arg: str | None) -> int:
         repo_root=repo_root,
         env=env_map,
         pulse_pending_queue=pulse_queue,
+        cabinet_services=cabinet_services,
+        data_dir=data_dir,
     )
+    cabinet_render_loop = cabinet_services.get("render_loop")
+    cabinet_voice_generator = cabinet_services.get("voice_generator")
+    cabinet_news: NewsRefresher | None = None
+    cabinet_flashcards: FlashcardPoolGenerator | None = None
+    cabinet_wallpapers: WallpaperWatcher | None = None
+    if is_cabinet_enabled(env_map):
+        news_query, news_max, news_interval = news_settings_from_env(env_map)
+        cabinet_news = NewsRefresher(
+            feed_dir=resolve_cabinet_feed_dir(repo_root),
+            query=news_query, max_results=news_max, interval_s=news_interval,
+        )
+        fc_model = config.agents.defaults.model
+
+        async def _flashcard_llm(prompt: str) -> str:
+            resp = await provider.chat_with_retry(
+                messages=[{"role": "user", "content": prompt}],
+                model=fc_model, max_tokens=2000,
+            )
+            return resp.content or ""
+
+        cabinet_flashcards = FlashcardPoolGenerator(
+            llm_call=_flashcard_llm,
+            feed_dir=resolve_cabinet_feed_dir(repo_root),
+            pool_path=data_dir / "flashcard_pool.json",
+            get_current_datetime=lambda: datetime.now(tz),
+            interval_s=flashcards_interval_from_env(env_map),
+        )
+        cabinet_wallpapers = WallpaperWatcher(
+            wallpaper_dir=resolve_wallpaper_dir(repo_root, env_map),
+            interval_s=wallpaper_interval_from_env(env_map),
+        )
     dream_kwargs = (
         _build_dream_kwargs(provider, config, repo_root, tz)
         if (pulse_queue is not None and is_dream_state_enabled(env_map))
@@ -150,6 +192,16 @@ def run_gateway(workspace_arg: str | None, config_arg: str | None) -> int:
         try:
             await cron.start()
             await heartbeat.start()
+            if cabinet_render_loop is not None:
+                await cabinet_render_loop.start()
+            if cabinet_voice_generator is not None:
+                await cabinet_voice_generator.start()
+            if cabinet_news is not None:
+                await cabinet_news.start()
+            if cabinet_flashcards is not None:
+                await cabinet_flashcards.start()
+            if cabinet_wallpapers is not None:
+                await cabinet_wallpapers.start()
             if pulse_bundle is not None:
                 pulse_bundle.start()
             await asyncio.gather(agent.run(), channels.start_all())
@@ -160,6 +212,16 @@ def run_gateway(workspace_arg: str | None, config_arg: str | None) -> int:
             crashed = True
         finally:
             await agent.close_mcp()
+            if cabinet_wallpapers is not None:
+                await cabinet_wallpapers.stop()
+            if cabinet_flashcards is not None:
+                await cabinet_flashcards.stop()
+            if cabinet_news is not None:
+                await cabinet_news.stop()
+            if cabinet_voice_generator is not None:
+                await cabinet_voice_generator.stop()
+            if cabinet_render_loop is not None:
+                await cabinet_render_loop.stop()
             if pulse_bundle is not None:
                 await pulse_bundle.stop()
             heartbeat.stop()

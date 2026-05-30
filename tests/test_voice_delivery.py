@@ -1,11 +1,13 @@
 """Tests for voice_delivery module — WAV-to-OGG/Opus conversion and temp file management."""
 
 import io
+import os
 import struct
 import wave
 from pathlib import Path
 from unittest.mock import patch
 
+import av
 import numpy as np
 import pytest
 
@@ -14,6 +16,7 @@ from voice_delivery import (
     cleanup_temp_file,
     convert_wav_to_ogg,
     save_temp_ogg,
+    sweep_stale_voice_files,
 )
 
 
@@ -67,6 +70,52 @@ class TestConvertWavToOgg:
             wav = _make_wav_bytes(0.1, rate)
             ogg = convert_wav_to_ogg(wav)
             assert ogg[:4] == b"OggS"
+
+    def test_output_is_mono_48k_opus(self) -> None:
+        # Telegram voice notes must be mono OGG/Opus at 48 kHz.
+        ogg = convert_wav_to_ogg(_make_wav_bytes(0.2, 24000))
+        container = av.open(io.BytesIO(ogg), mode="r")
+        try:
+            stream = container.streams.audio[0]
+            assert stream.codec_context.name == "opus"
+            assert stream.codec_context.sample_rate == 48000
+            assert stream.codec_context.channels == 1
+        finally:
+            container.close()
+
+
+# ---------------------------------------------------------------------------
+# sweep_stale_voice_files (race-safe cleanup of async-sent voice notes)
+# ---------------------------------------------------------------------------
+
+
+class TestSweepStaleVoiceFiles:
+    def test_removes_old_keeps_recent_and_non_voice(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "voice_delivery.tempfile.gettempdir", lambda: str(tmp_path)
+        )
+        old = tmp_path / "voice_old.ogg"; old.write_bytes(b"x")
+        recent = tmp_path / "voice_new.ogg"; recent.write_bytes(b"y")
+        other = tmp_path / "report.ogg"; other.write_bytes(b"z")
+        os.utime(old, (1000, 1000))
+        os.utime(recent, (100_000, 100_000))
+
+        removed = sweep_stale_voice_files(max_age_s=60, now=100_030)
+
+        assert removed == 1
+        assert not old.exists()       # 1000 < cutoff (99_970) -> swept
+        assert recent.exists()        # 100_000 >= cutoff -> kept (in flight)
+        assert other.exists()         # not a voice_*.ogg -> untouched
+
+    def test_missing_dir_returns_zero(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "voice_delivery.tempfile.gettempdir", lambda: str(tmp_path / "nope")
+        )
+        assert sweep_stale_voice_files() == 0
 
 
 # ---------------------------------------------------------------------------

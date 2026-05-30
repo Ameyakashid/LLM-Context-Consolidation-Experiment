@@ -1,9 +1,9 @@
-"""Tests for MagicMirror hook chain integration via create_hooks.
+"""Tests for Cabinet service registration via create_hooks.
 
-Verifies that ``MagicMirrorHook`` is appended exactly when
-``MAGICMIRROR_ENABLED=true`` and ``repo_root`` is provided, that its
-chain position is after ``VoiceHook`` and before any ``DiscoHook``, and
-that the flag-off path allocates no hook and starts no thread pool.
+The legacy MagicMirrorHook is gone — feeds, voices.md, and alert evaluation
+now live in CabinetRenderLoop. These tests verify create_hooks wires the
+render loop / voice buffer / top-up generator into ``cabinet_services`` when
+the Cabinet is enabled, and stays a no-op (back-compat) otherwise.
 """
 
 from __future__ import annotations
@@ -50,97 +50,6 @@ def _hook_names(hooks: list[object]) -> list[str]:
     return [getattr(h, "hook_name", h.__class__.__name__) for h in hooks]
 
 
-def _call_create_hooks(
-    stores: dict[str, object],
-    states_yaml: Path,
-    tmp_data_dir: Path,
-    env: dict[str, str] | None = None,
-    repo_root: Path | None = None,
-) -> list[object]:
-    return create_hooks(  # type: ignore[return-value]
-        stores=stores,
-        states_path=states_yaml,
-        state_file_path=tmp_data_dir / "state.json",
-        provider=MagicMock(),
-        model="test-model",
-        session_flag=SessionFlag(),
-        tz=ZoneInfo("UTC"),
-        workspace=states_yaml.parent,
-        repo_root=repo_root,
-        env=env,
-    )
-
-
-class TestMagicMirrorChainRegistration:
-
-    def test_flag_off_appends_no_hook(
-        self, tmp_data_dir: Path, states_yaml: Path, tmp_path: Path,
-    ) -> None:
-        stores = create_stores(tmp_data_dir)
-        hooks = _call_create_hooks(
-            stores,
-            states_yaml,
-            tmp_data_dir,
-            env={"MAGICMIRROR_ENABLED": "false"},
-            repo_root=tmp_path,
-        )
-        assert "MagicMirrorHook" not in _hook_names(hooks)
-
-    def test_missing_env_appends_no_hook(
-        self, tmp_data_dir: Path, states_yaml: Path, tmp_path: Path,
-    ) -> None:
-        stores = create_stores(tmp_data_dir)
-        hooks = _call_create_hooks(
-            stores, states_yaml, tmp_data_dir, env=None, repo_root=tmp_path,
-        )
-        assert "MagicMirrorHook" not in _hook_names(hooks)
-
-    def test_missing_repo_root_appends_no_hook(
-        self, tmp_data_dir: Path, states_yaml: Path,
-    ) -> None:
-        stores = create_stores(tmp_data_dir)
-        hooks = _call_create_hooks(
-            stores,
-            states_yaml,
-            tmp_data_dir,
-            env={"MAGICMIRROR_ENABLED": "true"},
-            repo_root=None,
-        )
-        assert "MagicMirrorHook" not in _hook_names(hooks)
-
-    def test_flag_on_appends_hook_after_voice(
-        self, tmp_data_dir: Path, states_yaml: Path, tmp_path: Path,
-    ) -> None:
-        stores = create_stores(tmp_data_dir)
-        hooks = _call_create_hooks(
-            stores,
-            states_yaml,
-            tmp_data_dir,
-            env={"MAGICMIRROR_ENABLED": "true"},
-            repo_root=tmp_path,
-        )
-        names = _hook_names(hooks)
-        assert "MagicMirrorHook" in names
-        assert names.index("MagicMirrorHook") > names.index("VoiceHook")
-
-    def test_flag_on_places_mm_before_disco(
-        self, tmp_data_dir: Path, states_yaml: Path, tmp_path: Path,
-    ) -> None:
-        _write_disco_yaml(states_yaml.parent)
-        stores = create_stores(tmp_data_dir)
-        hooks = _call_create_hooks(
-            stores,
-            states_yaml,
-            tmp_data_dir,
-            env={"MAGICMIRROR_ENABLED": "true"},
-            repo_root=tmp_path,
-        )
-        names = _hook_names(hooks)
-        assert "MagicMirrorHook" in names
-        assert "DiscoHook" in names
-        assert names.index("MagicMirrorHook") < names.index("DiscoHook")
-
-
 _MINIMAL_DISCO_YAML = """
 enabled: true
 activation_states: [avoidance, overwhelm, rsd]
@@ -174,3 +83,103 @@ def _write_disco_yaml(workspace: Path) -> None:
     (workspace / "disco_voices.yaml").write_text(
         _MINIMAL_DISCO_YAML, encoding="utf-8",
     )
+
+
+class TestCabinetRenderLoopRegistration:
+    """create_hooks populates cabinet_services['render_loop'] when enabled."""
+
+    def _call(
+        self,
+        stores: dict[str, object],
+        states_yaml: Path,
+        tmp_data_dir: Path,
+        tmp_path: Path,
+        env: dict[str, str] | None,
+        services: dict[str, object] | None,
+    ) -> list[object]:
+        return create_hooks(  # type: ignore[return-value]
+            stores=stores,
+            states_path=states_yaml,
+            state_file_path=tmp_data_dir / "state.json",
+            provider=MagicMock(),
+            model="test-model",
+            session_flag=SessionFlag(),
+            tz=ZoneInfo("UTC"),
+            workspace=states_yaml.parent,
+            repo_root=tmp_path,
+            env=env,
+            cabinet_services=services,
+        )
+
+    def test_loop_built_when_enabled(
+        self, tmp_data_dir: Path, states_yaml: Path, tmp_path: Path,
+    ) -> None:
+        from cabinet_render_loop import CabinetRenderLoop
+
+        stores = create_stores(tmp_data_dir)
+        services: dict[str, object] = {}
+        self._call(
+            stores, states_yaml, tmp_data_dir, tmp_path,
+            {"CABINET_ENABLED": "true"}, services,
+        )
+        loop = services.get("render_loop")
+        assert isinstance(loop, CabinetRenderLoop)
+        assert loop._feed_dir == tmp_path / "cabinet" / "feeds"
+
+    def test_no_loop_when_disabled(
+        self, tmp_data_dir: Path, states_yaml: Path, tmp_path: Path,
+    ) -> None:
+        stores = create_stores(tmp_data_dir)
+        services: dict[str, object] = {}
+        self._call(
+            stores, states_yaml, tmp_data_dir, tmp_path,
+            {"CABINET_ENABLED": "false"}, services,
+        )
+        assert "render_loop" not in services
+
+    def test_chain_builds_when_services_not_provided(
+        self, tmp_data_dir: Path, states_yaml: Path, tmp_path: Path,
+    ) -> None:
+        # Back-compat: callers that pass no cabinet_services dict still get a
+        # valid chain (no MM hook, no crash).
+        stores = create_stores(tmp_data_dir)
+        hooks = self._call(
+            stores, states_yaml, tmp_data_dir, tmp_path,
+            {"CABINET_ENABLED": "true"}, None,
+        )
+        names = _hook_names(hooks)
+        assert "StateResponseHook" in names
+        assert "MagicMirrorHook" not in names
+
+    def test_voice_generator_built_with_disco_and_data_dir(
+        self, tmp_data_dir: Path, states_yaml: Path, tmp_path: Path,
+    ) -> None:
+        from voice_buffer import VoiceBuffer
+        from voice_generator import VoiceTopUpGenerator
+
+        _write_disco_yaml(states_yaml.parent)
+        stores = create_stores(tmp_data_dir)
+        services: dict[str, object] = {}
+        create_hooks(
+            stores=stores, states_path=states_yaml,
+            state_file_path=tmp_data_dir / "state.json", provider=MagicMock(),
+            model="test-model", session_flag=SessionFlag(), tz=ZoneInfo("UTC"),
+            workspace=states_yaml.parent, repo_root=tmp_path,
+            env={"CABINET_ENABLED": "true"}, cabinet_services=services,
+            data_dir=tmp_data_dir,
+        )
+        assert isinstance(services.get("voice_buffer"), VoiceBuffer)
+        assert isinstance(services.get("voice_generator"), VoiceTopUpGenerator)
+
+    def test_no_voice_generator_without_data_dir(
+        self, tmp_data_dir: Path, states_yaml: Path, tmp_path: Path,
+    ) -> None:
+        _write_disco_yaml(states_yaml.parent)
+        stores = create_stores(tmp_data_dir)
+        services: dict[str, object] = {}
+        self._call(
+            stores, states_yaml, tmp_data_dir, tmp_path,
+            {"CABINET_ENABLED": "true"}, services,
+        )  # _call passes no data_dir
+        assert "render_loop" in services
+        assert "voice_generator" not in services

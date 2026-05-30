@@ -1,17 +1,13 @@
-"""Markdown-feed renderers for the MagicMirror² MMM-Markdown module.
+"""Markdown/JSON feed renderers + atomic writers for the Cabinet display.
 
-Three pure renderers (``render_tasks_markdown``,
-``render_state_buffers_markdown``, ``render_schedule_markdown``) turn the
-bot's domain models plus a tz-aware ``now`` into the text that lands in
-``tasks.md``, ``state_buffers.md``, and ``schedule.md`` — one per page of
-the MagicMirror display. :func:`write_feeds` writes all three atomically
-via tmp-file + rename; :func:`resolve_feed_dir` is the single source of
-truth for where the files live inside the vendored module tree.
+Pure renderers (``render_tasks_markdown``, ``render_state_buffers_markdown``,
+``render_schedule_markdown``, ``render_voices_markdown``) turn the bot's
+domain models plus a tz-aware ``now`` into the text the Cabinet frontend
+polls; the ``write_*`` helpers write each feed atomically (tmp-file +
+rename) into the Cabinet's ``feeds/`` dir.
 
-Rendering is deliberately emoji-free (the upstream SOUL.md style carries
-none, and we render markdown straight into HTML via MagicMirror's
-showdown pipeline, so the same plain-text look that works in chat works
-on the tablet).
+Rendering is deliberately emoji-free — the same plain-text look that works
+in chat works on the tablet.
 """
 
 from __future__ import annotations
@@ -30,6 +26,9 @@ log = logging.getLogger(__name__)
 TASKS_FEED_FILENAME: str = "tasks.md"
 STATE_BUFFERS_FEED_FILENAME: str = "state_buffers.md"
 SCHEDULE_FEED_FILENAME: str = "schedule.md"
+VOICES_FEED_FILENAME: str = "voices.md"
+NEWS_FEED_FILENAME: str = "news.md"
+FLASHCARDS_FEED_FILENAME: str = "flashcards.json"
 
 _BLOCKED_TAG: str = "blocked"
 _LOW_MARKER: str = " (low)"
@@ -39,11 +38,6 @@ _EMPTY_COMPLETED: str = "_None completed yet today._"
 _EMPTY_BLOCKED: str = "_No blocked tasks._"
 _EMPTY_BUFFERS: str = "_No active buffers._"
 _EMPTY_SCHEDULE: str = "_No check-ins configured._"
-
-
-def resolve_feed_dir(repo_root: Path) -> Path:
-    """Return the on-disk directory MMM-Markdown reads feed files from."""
-    return repo_root / "magicmirror" / "modules" / "MMM-Markdown" / "markdown"
 
 
 # ---------------------------------------------------------------------------
@@ -233,6 +227,29 @@ def render_schedule_markdown(
 
 
 # ---------------------------------------------------------------------------
+# Voices renderer (Cabinet inner-voices feed)
+# ---------------------------------------------------------------------------
+
+def render_voices_markdown(voices: list[tuple[str, str]]) -> str:
+    """Render the ``voices.md`` feed the Cabinet's voice strip reads.
+
+    ``voices`` is a list of ``(who, line)`` pairs; ``who`` is upper-cased
+    (LOGIC / EMPATHY / VOLITION drive the strip's colors). Empty lines are
+    skipped. Returns ``""`` when there is nothing to show so the display
+    falls back to its client-side auto-generated lines.
+    """
+    rows: list[str] = []
+    for who, line in voices:
+        text = (line or "").strip()
+        if not text:
+            continue
+        rows.append(f"- {who.strip().upper()} — {text}")
+    if not rows:
+        return ""
+    return "\n".join(["## Voices", "", *rows]) + "\n"
+
+
+# ---------------------------------------------------------------------------
 # Atomic writer
 # ---------------------------------------------------------------------------
 
@@ -259,3 +276,21 @@ def write_feeds(
     _atomic_write(feed_dir / TASKS_FEED_FILENAME, tasks_md)
     _atomic_write(feed_dir / STATE_BUFFERS_FEED_FILENAME, state_buffers_md)
     _atomic_write(feed_dir / SCHEDULE_FEED_FILENAME, schedule_md)
+
+
+def write_voices_feed(feed_dir: Path, voices_md: str) -> None:
+    """Atomically write the ``voices.md`` feed into ``feed_dir``."""
+    feed_dir.mkdir(parents=True, exist_ok=True)
+    _atomic_write(feed_dir / VOICES_FEED_FILENAME, voices_md)
+
+
+def write_news_feed(feed_dir: Path, news_md: str) -> None:
+    """Atomically write the ``news.md`` feed into ``feed_dir``."""
+    feed_dir.mkdir(parents=True, exist_ok=True)
+    _atomic_write(feed_dir / NEWS_FEED_FILENAME, news_md)
+
+
+def write_flashcards_feed(feed_dir: Path, flashcards_json: str) -> None:
+    """Atomically write the ``flashcards.json`` pool into ``feed_dir``."""
+    feed_dir.mkdir(parents=True, exist_ok=True)
+    _atomic_write(feed_dir / FLASHCARDS_FEED_FILENAME, flashcards_json)

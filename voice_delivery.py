@@ -9,6 +9,7 @@ import io
 import logging
 import os
 import tempfile
+import time
 from pathlib import Path
 
 import av
@@ -16,6 +17,9 @@ import av
 log = logging.getLogger(__name__)
 
 OPUS_BITRATE = 32_000
+OPUS_SAMPLE_RATE = 48_000  # Opus runs at 48 kHz; Telegram voice notes are mono
+VOICE_TEMP_PREFIX = "voice_"
+STALE_VOICE_AGE_S = 120.0
 
 
 def convert_wav_to_ogg(wav_bytes: bytes) -> bytes:
@@ -40,15 +44,30 @@ def convert_wav_to_ogg(wav_bytes: bytes) -> bytes:
         input_stream = input_container.streams.audio[0]
 
         with av.open(output_buffer, mode="w", format="ogg") as output_container:
-            output_stream = output_container.add_stream("libopus")
+            # Telegram voice notes want mono OGG/Opus, and Opus runs at 48 kHz.
+            # Kokoro emits 24 kHz mono, so resample explicitly — otherwise the
+            # frame rate disagrees with the encoder and the audio plays back
+            # wrong (or Telegram rejects the note).
+            output_stream = output_container.add_stream(
+                "libopus", rate=OPUS_SAMPLE_RATE,
+            )
             output_stream.bit_rate = OPUS_BITRATE
+            output_stream.layout = "mono"  # Telegram voice notes are mono
+            resampler = av.AudioResampler(
+                format="s16", layout="mono", rate=OPUS_SAMPLE_RATE,
+            )
 
-            for frame in input_container.decode(input_stream):
+            def _mux(frame: object) -> None:
                 for packet in output_stream.encode(frame):
                     output_container.mux(packet)
 
-            for packet in output_stream.encode(None):
-                output_container.mux(packet)
+            for frame in input_container.decode(input_stream):
+                frame.pts = None
+                for resampled in resampler.resample(frame):
+                    _mux(resampled)
+            for resampled in resampler.resample(None):  # flush the resampler
+                _mux(resampled)
+            _mux(None)  # flush the encoder
 
     return output_buffer.getvalue()
 
@@ -70,7 +89,7 @@ def save_temp_ogg(ogg_bytes: bytes) -> Path:
     if not ogg_bytes:
         raise ValueError("Cannot save empty OGG data")
 
-    fd, path_str = tempfile.mkstemp(suffix=".ogg", prefix="voice_")
+    fd, path_str = tempfile.mkstemp(suffix=".ogg", prefix=VOICE_TEMP_PREFIX)
     os.close(fd)
     path = Path(path_str)
     try:
@@ -87,3 +106,31 @@ def cleanup_temp_file(path: Path) -> None:
         path.unlink(missing_ok=True)
     except OSError as exc:
         log.warning("Failed to clean up temp file %s: %s", path, exc)
+
+
+def sweep_stale_voice_files(
+    max_age_s: float = STALE_VOICE_AGE_S, now: float | None = None,
+) -> int:
+    """Delete leftover ``voice_*.ogg`` temp files older than ``max_age_s``.
+
+    The voice note is sent asynchronously (the channel opens the file from a
+    bus consumer *after* the tool returns), so we must NOT delete it inline —
+    that races the send and leaves Telegram opening a vanished file. Instead
+    each new ``speak`` sweeps the previous notes once they're safely past the
+    send window. Never raises.
+    """
+    cutoff = (time.time() if now is None else now) - max_age_s
+    tmp_dir = Path(tempfile.gettempdir())
+    removed = 0
+    try:
+        candidates = list(tmp_dir.glob(f"{VOICE_TEMP_PREFIX}*.ogg"))
+    except OSError:
+        return 0
+    for path in candidates:
+        try:
+            if path.stat().st_mtime < cutoff:
+                path.unlink(missing_ok=True)
+                removed += 1
+        except OSError:
+            continue
+    return removed

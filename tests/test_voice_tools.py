@@ -115,7 +115,9 @@ class TestSpeakToolHappyPath:
         mock_convert.assert_called_once_with(b"WAVfakedata")
         mock_save.assert_called_once_with(b"OggSfakedata")
         mock_execute.assert_called_once()
-        mock_cleanup.assert_called_once_with(Path("/tmp/voice_abc.ogg"))
+        # On success the file is NOT deleted inline — the channel reads it
+        # asynchronously after this returns; sweep reaps it on the next call.
+        mock_cleanup.assert_not_called()
         assert result == "Message sent"
 
     @patch("voice_tools.cleanup_temp_file")

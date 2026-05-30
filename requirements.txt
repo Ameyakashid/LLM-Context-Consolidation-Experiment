@@ -6,6 +6,11 @@ croniter==6.2.2
 tzdata>=2024.1; sys_platform == "win32"
 kokoro-onnx>=0.5.0
 av>=12.0.0
+# The Cabinet display (Task 20) — static server + news pull. Replaces the
+# Node/MagicMirror² stack with an in-process Python server.
+starlette>=1.0.0
+uvicorn>=0.44.0
+ddgs>=9.13.0
 # Voice input (Task 19)
 faster-whisper>=1.0.0
 python-dateutil>=2.9

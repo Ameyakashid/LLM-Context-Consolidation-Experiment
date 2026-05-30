@@ -52,8 +52,8 @@ CHECKIN_CONCERN_IDS: frozenset[str] = ALL_CHECKIN_TYPES
 def is_pulse_engine_enabled(env: Mapping[str, str]) -> bool:
     """Return True when ``PULSE_ENGINE_ENABLED`` is the string ``"true"``.
 
-    Matches the 4-of-5 majority convention used by ``is_gcal_enabled`` /
-    ``is_magicmirror_enabled`` / ``is_syncall_enabled`` /
+    Matches the convention used by ``is_gcal_enabled`` /
+    ``is_cabinet_enabled`` / ``is_syncall_enabled`` /
     ``is_taskwarrior_enabled``: case-insensitive, whitespace-stripped,
     strict ``== "true"`` — ``"1"``, ``"yes"``, ``"on"`` all resolve False.
     """

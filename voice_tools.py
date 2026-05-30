@@ -19,7 +19,12 @@ from nanobot.agent.tools.schema import (
 )
 
 from tts_engine import DEFAULT_LANG, DEFAULT_SPEED, DEFAULT_VOICE, synthesize_speech
-from voice_delivery import cleanup_temp_file, convert_wav_to_ogg, save_temp_ogg
+from voice_delivery import (
+    cleanup_temp_file,
+    convert_wav_to_ogg,
+    save_temp_ogg,
+    sweep_stale_voice_files,
+)
 
 log = logging.getLogger(__name__)
 
@@ -93,16 +98,20 @@ class SpeakTool(Tool):
         except Exception as exc:
             return f"Error: Audio conversion failed — {exc}"
 
+        # Reap voice notes from previous calls (see sweep docstring). We must
+        # NOT delete the new file inline: the channel sends it asynchronously
+        # from a bus consumer AFTER this returns, so deleting here races that
+        # read and Telegram fails to open a vanished file.
+        sweep_stale_voice_files()
         ogg_path = save_temp_ogg(ogg_bytes)
         try:
-            result = await self._message_tool.execute(
+            return await self._message_tool.execute(
                 content="",
                 media=[str(ogg_path)],
             )
-        finally:
-            cleanup_temp_file(ogg_path)
-
-        return result
+        except Exception:
+            cleanup_temp_file(ogg_path)  # hand-off raised — safe to remove now
+            raise
 
 
 def register_voice_tools(registry: ToolRegistry, message_tool: Tool) -> int:

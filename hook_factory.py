@@ -30,18 +30,20 @@ from calendar_hook import CalendarContextHook
 from calendar_mcp_client import CalendarMCPClient
 from checkin_schedule import CheckInScheduleStore
 from cognitive_state_writer import write_cognitive_state
-from disco_config import load_disco_config
+from disco_config import DiscoConfig, load_disco_config
 from disco_hook import DiscoHook
 from hook_adapter import HookAdapter
-from magicmirror_feeds import resolve_feed_dir
-from magicmirror_hook import MagicMirrorHook, build_webhook_base_url
-from magicmirror_setup import is_magicmirror_enabled
+from cabinet_alerts import ALERTS_FEED_FILENAME, AlertEvaluator, AlertQueue
+from cabinet_render_loop import CabinetRenderLoop, render_interval_from_env
+from cabinet_server import is_cabinet_enabled, resolve_cabinet_feed_dir
 from memory_context import MemoryContextHook
 from memory_store import MemoryEntryStore
 from scheduling_hook import SchedulingHook
 from state_detection import StateName, load_state_config
 from state_response_integration import StateResponseHook
 from task_store import TaskStoreProtocol
+from voice_buffer import VoiceBuffer, disco_comments_to_voice_lines
+from voice_generator import VoiceTopUpGenerator, voice_topup_from_env
 from voice_trigger_hook import VoiceHook
 
 log = logging.getLogger(__name__)
@@ -133,16 +135,21 @@ def create_hooks(
     repo_root: Path | None = None,
     env: Mapping[str, str] | None = None,
     pulse_pending_queue: "PendingCheckinQueue | None" = None,
+    cabinet_services: dict[str, object] | None = None,
+    data_dir: Path | None = None,
 ) -> list[AgentHook]:
-    """Create the hook chain: up to 6 base hooks plus optional Disco/MM.
+    """Create the hook chain plus optional Cabinet services.
 
     When ``calendar_cache`` and ``calendar_client`` are both provided,
     a ``CalendarContextHook`` is inserted at position 4 (after
-    ``SchedulingHook``, before ``BufferHook``). When
-    ``MAGICMIRROR_ENABLED=true`` in ``env`` and ``repo_root`` is
-    provided, a ``MagicMirrorHook`` is appended after ``VoiceHook``
-    (before any ``DiscoHook``). Base hooks are wrapped in
-    ``HookAdapter``; DiscoHook extends ``AgentHook`` directly.
+    ``SchedulingHook``, before ``BufferHook``). When the Cabinet is enabled
+    (``CABINET_ENABLED``, fallback ``MAGICMIRROR_ENABLED``) and a
+    ``cabinet_services`` dict is passed, this also constructs the
+    ``CabinetRenderLoop`` (feeds + voices.md + alert evaluation) and, when a
+    disco config + ``data_dir`` are present, the voice buffer + top-up
+    generator — stashing them in ``cabinet_services`` for the runner to
+    start/stop. Base hooks are wrapped in ``HookAdapter``; DiscoHook extends
+    ``AgentHook`` directly and appends last.
     """
     state_config = load_state_config(states_path)
     llm_call = LLMCallableWrapper(provider=provider, model=model)
@@ -217,21 +224,59 @@ def create_hooks(
     hooks.append(HookAdapter(hook=buffer_hook, name="BufferHook"))
     hooks.append(HookAdapter(hook=voice_hook, name="VoiceHook"))
 
-    mm_hook = _maybe_build_magicmirror_hook(
-        env=env,
-        repo_root=repo_root,
-        task_store=task_store,
-        buffer_store=buffer_store,
-        schedule_store=schedule_store,
-        is_scheduled_session=is_scheduled_session,
-        get_cognitive_state=get_cognitive_state,
-        get_current_datetime=get_current_datetime,
+    cabinet_on = (
+        cabinet_services is not None
+        and repo_root is not None
+        and env is not None
+        and is_cabinet_enabled(env)
     )
-    if mm_hook is not None:
-        hooks.append(HookAdapter(hook=mm_hook, name="MagicMirrorHook"))
 
-    _append_disco_hook(hooks, workspace, states_path, llm_call,
-                       get_cognitive_state)
+    # Voice buffer shared by the render loop (writes voices.md), the disco
+    # capture seam (stores fired lines), and the top-up generator.
+    voice_buffer: VoiceBuffer | None = None
+    on_comments: Callable[[list[object]], None] | None = None
+    if cabinet_on and data_dir is not None:
+        voice_buffer = VoiceBuffer(data_dir / "voice_buffer.json")
+        buf = voice_buffer
+
+        def on_comments(comments: list[object]) -> None:
+            buf.add(disco_comments_to_voice_lines(comments, get_current_datetime()))
+
+    if cabinet_on:
+        feed_dir = resolve_cabinet_feed_dir(repo_root)  # type: ignore[arg-type]
+        alert_evaluator = AlertEvaluator(AlertQueue(feed_dir / ALERTS_FEED_FILENAME))
+        cabinet_services["render_loop"] = CabinetRenderLoop(  # type: ignore[index]
+            feed_dir=feed_dir,
+            task_store=task_store,
+            buffer_store=buffer_store,
+            schedule_store=schedule_store,
+            get_cognitive_state=get_cognitive_state,
+            get_current_datetime=get_current_datetime,
+            interval_s=render_interval_from_env(env),
+            voice_buffer=voice_buffer,
+            alert_evaluator=alert_evaluator,
+        )
+
+    disco_cfg, disco_llm_call = _append_disco_hook(
+        hooks, workspace, states_path, llm_call, get_cognitive_state,
+        on_comments=on_comments,
+    )
+
+    if (
+        cabinet_on and voice_buffer is not None
+        and disco_cfg is not None and disco_llm_call is not None
+    ):
+        cabinet_services["voice_buffer"] = voice_buffer  # type: ignore[index]
+        cabinet_services["voice_generator"] = VoiceTopUpGenerator(  # type: ignore[index]
+            buffer=voice_buffer,
+            config=disco_cfg,
+            llm_call=disco_llm_call,
+            task_store=task_store,
+            buffer_store=buffer_store,
+            get_cognitive_state=get_cognitive_state,
+            get_current_datetime=get_current_datetime,
+            interval_s=voice_topup_from_env(env),
+        )
     return hooks
 
 
@@ -241,18 +286,22 @@ def _append_disco_hook(
     states_path: Path,
     llm_call: LLMCallableWrapper,
     get_cognitive_state: Callable[[], StateName],
-) -> None:
+    on_comments: Callable[[list[object]], None] | None = None,
+) -> tuple[DiscoConfig | None, LLMCallableWrapper | None]:
     """Append DiscoHook in place when the YAML config is present.
 
     Uses the disco_voices.yaml ``model:`` field for the voice LLM calls
-    (separate from the main agent model), so disco can run on a JSON-
-    friendly model while the main reply uses a different one.
+    (separate from the main agent model). ``on_comments`` is forwarded to
+    the hook so fired comments can be captured into the Cabinet voice buffer
+    (chat output is unchanged). Returns ``(config, disco_llm_call)`` — both
+    ``None`` when disco is disabled — so the caller can build the top-up
+    generator on the same config + model.
     """
     base = workspace if workspace is not None else states_path.parent
     disco_config_path = base / DEFAULT_DISCO_VOICES_FILENAME
     if not disco_config_path.exists():
         log.info("DiscoHook disabled (no config at %s)", disco_config_path)
-        return
+        return None, None
     try:
         disco_cfg = load_disco_config(disco_config_path)
         # Reasoning models (e.g. gpt-oss) spend output tokens on reasoning
@@ -270,42 +319,11 @@ def _append_disco_hook(
             config=disco_cfg,
             llm_call=disco_llm_call,
             get_cognitive_state=get_cognitive_state,
+            on_comments=on_comments,
         )
         hooks.append(disco_hook)
         log.info("DiscoHook loaded from %s", disco_config_path)
+        return disco_cfg, disco_llm_call
     except Exception:
         log.exception("DiscoHook disabled (config error)")
-
-
-def _maybe_build_magicmirror_hook(
-    env: Mapping[str, str] | None,
-    repo_root: Path | None,
-    task_store: TaskStoreProtocol,
-    buffer_store: BufferStore,
-    schedule_store: CheckInScheduleStore,
-    is_scheduled_session: Callable[[], bool],
-    get_cognitive_state: Callable[[], StateName],
-    get_current_datetime: Callable[[], datetime],
-) -> MagicMirrorHook | None:
-    """Build the MagicMirror hook when the flag is on and deps are present.
-
-    Returns ``None`` when ``MAGICMIRROR_ENABLED`` is missing/false or
-    when ``repo_root`` was not supplied — flag-off path allocates no
-    hook, starts no thread pool, and writes no feed files.
-    """
-    if env is None or repo_root is None:
-        return None
-    if not is_magicmirror_enabled(env):
-        return None
-    host = env.get("MAGICMIRROR_WEBHOOK_HOST", "127.0.0.1")
-    port = env.get("MAGICMIRROR_WEBHOOK_PORT", "8080")
-    return MagicMirrorHook(
-        webhook_base_url=build_webhook_base_url(host, port),
-        feed_dir=resolve_feed_dir(repo_root),
-        task_store=task_store,
-        buffer_store=buffer_store,
-        schedule_store=schedule_store,
-        is_scheduled_session=is_scheduled_session,
-        get_cognitive_state=get_cognitive_state,
-        get_current_datetime=get_current_datetime,
-    )
+        return None, None

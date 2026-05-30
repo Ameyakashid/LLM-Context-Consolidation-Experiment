@@ -51,14 +51,16 @@ gcp-oauth.keys.json
 gcp-oauth.keys.*.json
 !gcp-oauth.keys.example.json
 
-# Vendored MagicMirror — build artefacts + rendered config
-magicmirror/node_modules/
-magicmirror/modules/MMM-*/node_modules/
-magicmirror/config/config.js
-
-# MagicMirror runtime-generated markdown feeds (examples.md is vendored)
-magicmirror/modules/MMM-Markdown/markdown/*.md
-!magicmirror/modules/MMM-Markdown/markdown/examples.md
+# Cabinet frontend: renderer .js/.css/html are tracked; runtime-written
+# feeds + wallpaper manifest/images are not. .gitkeep keeps the dirs.
+cabinet/feeds/*.md
+cabinet/feeds/*.json
+cabinet/wallpapers/manifest.json
+cabinet/wallpapers/*.png
+cabinet/wallpapers/*.jpg
+cabinet/wallpapers/*.jpeg
+!cabinet/feeds/.gitkeep
+!cabinet/wallpapers/.gitkeep
 
 # Vendored tasklib — pip install artefacts + live Taskwarrior data
 vendor/tasklib/*.egg-info/
